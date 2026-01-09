@@ -160,6 +160,40 @@ for idx,pvnaam in enumerate(pauzevlinder_namen,start=1):
 # Maak 'selected' lijst van pauzevlinders (dicts met naam en attracties)
 selected = [s for s in studenten if s.get("is_pauzevlinder")]
 
+
+
+
+# -----------------------------
+# Verwerk samengevoegde attracties
+# -----------------------------
+samengevoegde_attracties = {}
+
+for rij in range(2, 500):
+    if ws[f'BJ{rij}'].value in [1, True, "WAAR", "X"]:  # Controleer of hokje is aangevinkt
+        attracties = [
+            ws[f'{kol}{rij}'].value for kol in ['BG', 'BH', 'BI']
+            if ws[f'{kol}{rij}'].value
+        ]
+        if len(attracties) > 1:
+            nieuwe_attractie = " + ".join(attracties)
+            samengevoegde_attracties[nieuwe_attractie] = set(attracties)
+
+# Verwijder originele attracties en voeg samengevoegde toe
+for nieuwe, origineel in samengevoegde_attracties.items():
+    attracties_te_plannen = [a for a in attracties_te_plannen if a not in origineel]
+    attracties_te_plannen.append(nieuwe)
+
+# Filter studenten die alle attracties in een samengevoegde groep kennen
+for student in studenten:
+    nieuwe_attracties = []
+    for nieuwe, origineel in samengevoegde_attracties.items():
+        if all(attr in student["attracties"] for attr in origineel):
+            nieuwe_attracties.append(nieuwe)
+    student["attracties"] = [a for a in student["attracties"] if a not in {
+        attr for groep in samengevoegde_attracties.values() for attr in groep
+    }] + nieuwe_attracties
+
+
 # -----------------------------
 # Attracties & aantallen (raw)
 # -----------------------------
@@ -639,38 +673,9 @@ for row in ws_out.iter_rows(min_row=2, values_only=True):
         if naam and str(naam).strip() != "":
             student_totalen[naam] += 1
 
-# -----------------------------
-# Verwerk samengevoegde attracties
-# -----------------------------
-samengevoegde_attracties = {}
 
-for rij in range(2, 500):
-    if ws[f'BJ{rij}'].value in [1, True, "WAAR", "X"]:  # Controleer of hokje is aangevinkt
-        attracties = [
-            ws[f'{kol}{rij}'].value for kol in ['BG', 'BH', 'BI']
-            if ws[f'{kol}{rij}'].value
-        ]
-        if len(attracties) > 1:
-            nieuwe_attractie = " + ".join(attracties)
-            samengevoegde_attracties[nieuwe_attractie] = set(attracties)
-
-# Verwijder originele attracties en voeg samengevoegde toe
-for nieuwe, origineel in samengevoegde_attracties.items():
-    attracties_te_plannen = [a for a in attracties_te_plannen if a not in origineel]
-    attracties_te_plannen.append(nieuwe)
-
-# Filter studenten die alle attracties in een samengevoegde groep kennen
-for student in studenten:
-    nieuwe_attracties = []
-    for nieuwe, origineel in samengevoegde_attracties.items():
-        if all(attr in student["attracties"] for attr in origineel):
-            nieuwe_attracties.append(nieuwe)
-    student["attracties"] = [a for a in student["attracties"] if a not in {
-        attr for groep in samengevoegde_attracties.values() for attr in groep
-    }] + nieuwe_attracties
-
-
-
+# Plaats deze verwerking vóór het gebruik van attracties_te_plannen en studenten
+# Dit zorgt ervoor dat de samengevoegde attracties correct worden meegenomen in de planning.
 
 
 
