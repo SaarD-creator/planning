@@ -598,8 +598,6 @@ for _ in range(max_iterations):
     if not changes_made:
         break
 
-
-
 # -----------------------------
 # Excel output
 # -----------------------------
@@ -616,15 +614,54 @@ thin_border = Border(
 )
 
 # -----------------------------
+# KLEUREN PER STUDENT
+# -----------------------------
+import colorsys
+from collections import defaultdict
+
+studenten_namen = sorted({s["naam"] for s in studenten})
+alle_namen = studenten_namen + [pv for pv in pauzevlinder_namen if pv not in studenten_namen]
+
+base_colors = [
+    "FFB3BA","FFDFBA","FFFFBA","BAFFC9","BAE1FF","E0BBE4","D291BC",
+    "FEC8D8","FFDFD3","B5EAD7","C7CEEA","FFDAC1","E2F0CB","F6DFEB"
+]
+
+def pastel_variant(hex_color, variant):
+    r = int(hex_color[0:2], 16)/255
+    g = int(hex_color[2:4], 16)/255
+    b = int(hex_color[4:6], 16)/255
+    h,l,s = colorsys.rgb_to_hls(r,g,b)
+    l = min(1, l + 0.04*(variant%3))
+    s = max(0.3, s - 0.05*(variant%5))
+    r2,g2,b2 = colorsys.hls_to_rgb(h,l,s)
+    return f"{int(r2*255):02X}{int(g2*255):02X}{int(b2*255):02X}"
+
+unique_colors = []
+variant = 0
+while len(unique_colors) < len(alle_namen):
+    for base in base_colors:
+        if len(unique_colors) >= len(alle_namen):
+            break
+        color = pastel_variant(base, variant) if variant > 0 else base
+        if color not in unique_colors:
+            unique_colors.append(color)
+    variant += 1
+
+student_kleuren = dict(zip(alle_namen, unique_colors))
+
+# -----------------------------
 # HEADER
 # -----------------------------
 ws_out.cell(1, 1, vandaag).font = Font(bold=True)
+ws_out.cell(1, 1).fill = white_fill
 
 for col_idx, uur in enumerate(sorted(open_uren), start=2):
-    c = ws_out.cell(1, col_idx, f"{uur}:00")
-    c.font = Font(bold=True)
-    c.alignment = center_align
-    c.border = thin_border
+    cell = ws_out.cell(1, col_idx, f"{uur}:00")
+    cell.font = Font(bold=True)
+    cell.alignment = center_align
+    cell.fill = white_fill
+    cell.border = thin_border
 
 # -----------------------------
 # ATTRACTIES
@@ -633,72 +670,119 @@ rij_out = 2
 
 for attr in attracties_te_plannen:
 
-    # Bepaal visuele rijen
+    # Bepaal visuele rijen (fusie of enkel)
     if attr in fusienaam_naar_groep:
         visuele_attrs = fusienaam_naar_groep[attr]
-        is_fusie = True
     else:
         visuele_attrs = [attr]
-        is_fusie = False
 
-    start_rij = rij_out
+    start_rij_attr = rij_out
 
-    # schrijf attractienamen
-    for vis_attr in visuele_attrs:
-        c = ws_out.cell(rij_out, 1, vis_attr)
-        c.font = Font(bold=True)
-        c.border = thin_border
+    for vis_idx, vis_attr in enumerate(visuele_attrs):
+        cell = ws_out.cell(rij_out, 1, vis_attr)
+        cell.font = Font(bold=True)
+        cell.fill = white_fill
+        cell.border = thin_border
+
+        for col_idx, uur in enumerate(sorted(open_uren), start=2):
+
+            if attr in fusienaam_naar_groep:
+                # Fusie-attractie
+                if fusie_actief(uur, attr):
+                    if vis_idx == 0:
+                        namen = assigned_map.get((uur, attr), [])
+                        if namen:
+                            student_naam = namen[0]
+                            c = ws_out.cell(rij_out, col_idx, student_naam)
+                            c.alignment = center_align
+                            c.fill = PatternFill(
+                                start_color=student_kleuren.get(student_naam, "FFFFFF"),
+                                fill_type="solid"
+                            )
+                        else:
+                            ws_out.cell(rij_out, col_idx, "")
+                    else:
+                        ws_out.cell(rij_out, col_idx, "")
+                else:
+                    ws_out.cell(rij_out, col_idx, "")
+            else:
+                # Normale attractie
+                namen = assigned_map.get((uur, attr), [])
+                if namen:
+                    student_naam = namen[0]
+                    c = ws_out.cell(rij_out, col_idx, student_naam)
+                    c.alignment = center_align
+                    c.fill = PatternFill(
+                        start_color=student_kleuren.get(student_naam, "FFFFFF"),
+                        fill_type="solid"
+                    )
+                else:
+                    ws_out.cell(rij_out, col_idx, "")
+
+            ws_out.cell(rij_out, col_idx).border = thin_border
+
         rij_out += 1
 
-    eind_rij = rij_out - 1
-
-    # per uur invullen
-    for col_idx, uur in enumerate(sorted(open_uren), start=2):
-
-        if is_fusie:
-            namen = assigned_map.get((uur, attr), [])
-
-            if namen:
-                naam = namen[0]
-                c = ws_out.cell(start_rij, col_idx, naam)
-                c.alignment = center_align
-                c.fill = PatternFill(
-                    start_color=student_kleuren.get(naam, "FFFFFF"),
-                    fill_type="solid"
-                )
-
+    # Merge cellen voor fusies
+    if attr in fusienaam_naar_groep:
+        for col_idx, uur in enumerate(sorted(open_uren), start=2):
+            if fusie_actief(uur, attr):
                 ws_out.merge_cells(
-                    start_row=start_rij,
-                    end_row=eind_rij,
+                    start_row=start_rij_attr,
+                    end_row=rij_out-1,
                     start_column=col_idx,
                     end_column=col_idx
                 )
 
-        else:
-            namen = assigned_map.get((uur, attr), [])
-            naam = namen[0] if namen else ""
-            c = ws_out.cell(start_rij, col_idx, naam)
-            c.alignment = center_align
-            if naam:
-                c.fill = PatternFill(
-                    start_color=student_kleuren.get(naam, "FFFFFF"),
-                    fill_type="solid"
-                )
+# -----------------------------
+# PAUZEVLINDERS
+# -----------------------------
+rij_out += 1
+for idx, pvnaam in enumerate(pauzevlinder_namen, start=1):
+    ws_out.cell(rij_out, 1, f"Pauzevlinder {idx}").font = Font(bold=True)
+    ws_out.cell(rij_out, 1).border = thin_border
+    for col_idx, uur in enumerate(sorted(open_uren), start=2):
+        cell_naam = pvnaam if uur in required_pauze_hours else ""
+        c = ws_out.cell(rij_out, col_idx, cell_naam)
+        c.alignment = center_align
+        c.border = thin_border
+        if cell_naam:
+            c.fill = PatternFill(
+                start_color=student_kleuren.get(cell_naam, "FFFFFF"),
+                fill_type="solid"
+            )
+    rij_out += 1
 
-        # borders op alle cellen
-        for r in range(start_rij, eind_rij + 1):
-            ws_out.cell(r, col_idx).border = thin_border
+# -----------------------------
+# EXTRA'S
+# -----------------------------
+rij_out += 1
+extras_flat = []
+for uur in sorted(open_uren):
+    for naam in extra_assignments[uur]:
+        if naam not in extras_flat:
+            extras_flat.append(naam)
+
+for idx, naam in enumerate(extras_flat, start=1):
+    ws_out.cell(rij_out, 1, f"Extra {idx}").font = Font(bold=True)
+    ws_out.cell(rij_out, 1).border = thin_border
+    for col_idx, uur in enumerate(sorted(open_uren), start=2):
+        cell_naam = naam if naam in extra_assignments[uur] else ""
+        c = ws_out.cell(rij_out, col_idx, cell_naam)
+        c.alignment = center_align
+        c.border = thin_border
+        if cell_naam:
+            c.fill = PatternFill(
+                start_color=student_kleuren.get(cell_naam, "FFFFFF"),
+                fill_type="solid"
+            )
+    rij_out += 1
 
 # -----------------------------
 # KOLOMBREEDTE
 # -----------------------------
-for col in range(1, len(open_uren) + 2):
+for col in range(1, len(open_uren)+2):
     ws_out.column_dimensions[get_column_letter(col)].width = 18
-
-
-
-
-
 
 
 
