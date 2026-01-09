@@ -674,10 +674,6 @@ for row in ws_out.iter_rows(min_row=2, values_only=True):
             student_totalen[naam] += 1
 
 
-# Plaats deze verwerking vóór het gebruik van attracties_te_plannen en studenten
-# Dit zorgt ervoor dat de samengevoegde attracties correct worden meegenomen in de planning.
-
-
 
 
 #DEEL 2
