@@ -5838,4 +5838,4 @@ for attr in attracties_te_plannen:
 
     for pos_idx in range(1, max_pos + 1):
         naam_attr = attr if max_pos == 1 else f"{attr} {pos_idx}"
-        ws_out.cell(rij_out, 1, naam_attr).font = Font(bold
+        ws_out.cell(rij_out, 1, naam_attr).font = Font(bold)
