@@ -1351,7 +1351,10 @@ for s in random.sample(lange_werkers, len(lange_werkers)):
             pv_lange_pauze_count[pv["naam"]] = 0
     geplaatst = False
     # Sorteer bij elke poging op actuele telling
-    halve_uren_sorted = sorted(halve_uren, key=lambda x: pv_lange_pauze_count[x[4]["naam"]])
+    halve_uren_sorted = sorted(
+        halve_uren,
+        key=lambda x: pv_lange_pauze_count.get(x[4]["naam"], 0) if isinstance(x[4], dict) and "naam" in x[4] else 0
+    )
     for idx, col1, col2, uur1, uur2, pv, pv_row in halve_uren_sorted:
         cel1 = ws_pauze.cell(pv_row, col1)
         cel2 = ws_pauze.cell(pv_row, col2)
