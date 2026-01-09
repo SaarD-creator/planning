@@ -128,6 +128,61 @@ for rij in range(2,500):
         "assigned_hours":[]
     })
 
+
+# -----------------------------
+# Samenvoeg-attracties (dagbreed)
+# -----------------------------
+
+samenvoegingen = []  # lijst van lijsten, bv [["A","B"], ["C","D","E"]]
+
+for rij in range(5, 12):  # BG5 t.e.m. BJ11
+    actief = ws[f"BJ{rij}"].value in [1, True, "WAAR", "X"]
+    if not actief:
+        continue
+
+    attrs = []
+    for col in ["BG", "BH", "BI"]:
+        val = ws[f"{col}{rij}"].value
+        if val:
+            attrs.append(str(val).strip())
+
+    if len(attrs) >= 2:
+        samenvoegingen.append(attrs)
+
+# Mapping: oude attractie -> nieuwe samengevoegde attractie
+fusie_map = {}
+
+# Lijst van nieuwe attractienamen
+samengevoegde_attracties = []
+
+for groep in samenvoegingen:
+    nieuwe_naam = " + ".join(groep)  # bv "A + B"
+    samengevoegde_attracties.append(nieuwe_naam)
+    for oude in groep:
+        fusie_map[oude] = nieuwe_naam
+# -----------------------------
+# Studenten aanpassen voor samengevoegde attracties
+# -----------------------------
+
+for s in studenten:
+    huidige = set(s["attracties"])
+    nieuwe_attracties = set(huidige)
+
+    for groep in samenvoegingen:
+        groep_set = set(groep)
+
+        if groep_set.issubset(huidige):
+            # student kan ALLES → fusie toepassen
+            nieuwe_naam = " + ".join(groep)
+            nieuwe_attracties -= groep_set
+            nieuwe_attracties.add(nieuwe_naam)
+        else:
+            # student kan niet alles → losse attracties verdwijnen
+            nieuwe_attracties -= groep_set
+
+    s["attracties"] = list(nieuwe_attracties)
+
+
 # -----------------------------
 # Openingsuren
 # -----------------------------
@@ -188,6 +243,29 @@ second_priority_order = [
     ws["BA" + str(rij)].value for rij in range(5, 12)
     if ws["BA" + str(rij)].value
 ]
+
+
+# -----------------------------
+# Attractielijst aanpassen voor samenvoegingen
+# -----------------------------
+
+oude_attracties = set(fusie_map.keys())
+
+nieuwe_lijst = []
+for attr in attracties_te_plannen:
+    if attr in oude_attracties:
+        continue
+    nieuwe_lijst.append(attr)
+
+# Voeg samengevoegde attracties toe
+for nieuwe in samengevoegde_attracties:
+    if nieuwe not in nieuwe_lijst:
+        nieuwe_lijst.append(nieuwe)
+
+attracties_te_plannen = nieuwe_lijst
+for nieuwe in samengevoegde_attracties:
+    aantallen_raw[nieuwe] = 1
+
 
 # -----------------------------
 # Compute aantallen per hour + red spots
