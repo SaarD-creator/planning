@@ -179,16 +179,6 @@ for s in studenten:
     s["attracties"] = list(nieuwe_attracties)
 
 
-# -----------------------------
-# Studenten per uur voorbereiden
-# -----------------------------
-for s in studenten:
-    # Start met de "dagbrede" attracties zoals eerder berekend
-    s["attracties_per_uur"] = {}
-    for uur in open_uren:
-        # start met de dagbrede attracties
-        s["attracties_per_uur"][uur] = set(s["attracties"])
-
 
 
 # -----------------------------
@@ -199,6 +189,16 @@ if not open_uren:
     open_uren=list(range(10,19))
 open_uren=sorted(set(open_uren))
 
+
+# -----------------------------
+# Studenten per uur voorbereiden
+# -----------------------------
+for s in studenten:
+    # Start met de "dagbrede" attracties zoals eerder berekend
+    s["attracties_per_uur"] = {}
+    for uur in open_uren:
+        # start met de dagbrede attracties
+        s["attracties_per_uur"][uur] = set(s["attracties"])
 
 # -----------------------------
 # Fusies per uur bepalen op basis van beschikbare studenten
