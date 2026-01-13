@@ -200,45 +200,6 @@ for s in studenten:
         # start met de dagbrede attracties
         s["attracties_per_uur"][uur] = set(s["attracties"])
 
-# -----------------------------
-# Fusies per uur bepalen op basis van beschikbare studenten
-# -----------------------------
-fusie_map_per_uur = {}
-
-for uur in open_uren:
-    # hoeveel studenten beschikbaar dit uur
-    student_count = sum(1 for s in studenten if uur in s["uren_beschikbaar"] and not (s["is_pauzevlinder"] and uur in required_pauze_hours))
-
-    # aantal attracties dat op dit uur gepland staat (dagbrede lijst)
-    attr_count = len(attracties_te_plannen)
-
-    # hoeveel samenvoegen nodig?
-    te_samenvoegen = attr_count - student_count
-
-    fusie_map_uur = {}
-    if te_samenvoegen > 0:
-        # neem groepen uit Excel-samenvoegingen, volg volgorde, zoveel als nodig
-        aantal = 0
-        for groep in samenvoegingen:
-            if aantal >= te_samenvoegen:
-                break
-            nieuwe_naam = " + ".join(groep)
-            for oude in groep:
-                fusie_map_uur[oude] = nieuwe_naam
-            aantal += len(groep) - 1  # aantal attracties dat we door deze fusie besparen
-    fusie_map_per_uur[uur] = fusie_map_uur
-
-# Pas per student per uur de attracties aan
-for s in studenten:
-    for uur in open_uren:
-        huidige = s["attracties_per_uur"][uur]
-        nieuwe = set(huidige)
-        for oude, nieuwe_naam in fusie_map_per_uur[uur].items():
-            if oude in nieuwe:
-                # verwijder oude en voeg nieuwe toe
-                nieuwe.discard(oude)
-                nieuwe.add(nieuwe_naam)
-        s["attracties_per_uur"][uur] = nieuwe
 
 
 # -----------------------------
@@ -356,6 +317,48 @@ def kritieke_score(attr, studenten_list):
     return sum(1 for s in studenten_list if attr in s["attracties"])
 
 attracties_te_plannen.sort(key=lambda a: kritieke_score(a, studenten_workend))
+
+
+
+# -----------------------------
+# Fusies per uur bepalen op basis van beschikbare studenten
+# -----------------------------
+fusie_map_per_uur = {}
+
+for uur in open_uren:
+    # hoeveel studenten beschikbaar dit uur
+    student_count = sum(1 for s in studenten if uur in s["uren_beschikbaar"] and not (s["is_pauzevlinder"] and uur in required_pauze_hours))
+
+    # aantal attracties dat op dit uur gepland staat (dagbrede lijst)
+    attr_count = len(attracties_te_plannen)
+
+    # hoeveel samenvoegen nodig?
+    te_samenvoegen = attr_count - student_count
+
+    fusie_map_uur = {}
+    if te_samenvoegen > 0:
+        # neem groepen uit Excel-samenvoegingen, volg volgorde, zoveel als nodig
+        aantal = 0
+        for groep in samenvoegingen:
+            if aantal >= te_samenvoegen:
+                break
+            nieuwe_naam = " + ".join(groep)
+            for oude in groep:
+                fusie_map_uur[oude] = nieuwe_naam
+            aantal += len(groep) - 1  # aantal attracties dat we door deze fusie besparen
+    fusie_map_per_uur[uur] = fusie_map_uur
+
+# Pas per student per uur de attracties aan
+for s in studenten:
+    for uur in open_uren:
+        huidige = s["attracties_per_uur"][uur]
+        nieuwe = set(huidige)
+        for oude, nieuwe_naam in fusie_map_per_uur[uur].items():
+            if oude in nieuwe:
+                # verwijder oude en voeg nieuwe toe
+                nieuwe.discard(oude)
+                nieuwe.add(nieuwe_naam)
+        s["attracties_per_uur"][uur] = nieuwe
 
 # -----------------------------
 # Assign per student
