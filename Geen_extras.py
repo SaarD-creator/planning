@@ -699,35 +699,94 @@ for col_idx, uur in enumerate(sorted(open_uren), start=2):
     ws_out.cell(1, col_idx).alignment = center_align
     ws_out.cell(1, col_idx).border = thin_border
 
-rij_out = 2
+# -----------------------------
+# Excel display-structuur (attracties altijd onder elkaar)
+# -----------------------------
+
+# Map: samengevoegde naam -> lijst losse attracties
+samengesteld_naar_los = {}
+for groepen in samengevoegd_per_uur.values():
+    for groep in groepen:
+        naam = " + ".join(groep)
+        samengesteld_naar_los[naam] = groep
+
+# Bepaal alle attracties die ooit samengevoegd zijn
+alle_losse_attracties = []
 for attr in attracties_te_plannen:
-    # FIX: correcte berekening max_pos
-    max_pos = max(
-        max(aantallen[uur].get(attr, 1) for uur in open_uren),
-        max(per_hour_assigned_counts[uur].get(attr, 0) for uur in open_uren)
-    )
-
-    for pos_idx in range(1, max_pos + 1):
-        naam_attr = attr if max_pos == 1 else f"{attr} {pos_idx}"
-        ws_out.cell(rij_out, 1, naam_attr).font = Font(bold=True)
-        ws_out.cell(rij_out, 1).fill = white_fill
-        ws_out.cell(rij_out, 1).border = thin_border
+    if " + " in attr and attr in samengesteld_naar_los:
+        for a in samengesteld_naar_los[attr]:
+            if a not in alle_losse_attracties:
+                alle_losse_attracties.append(a)
+    else:
+        if attr not in alle_losse_attracties:
+            alle_losse_attracties.append(attr)
 
 
-        for col_idx, uur in enumerate(sorted(open_uren), start=2):
-            # Red spots nu wit maken
-            if attr in red_spots.get(uur, set()) and pos_idx == 2:
-                ws_out.cell(rij_out, col_idx, "").fill = white_fill
-                ws_out.cell(rij_out, col_idx).border = thin_border
-            else:
-                namen = assigned_map.get((uur, attr), [])
-                naam = namen[pos_idx - 1] if pos_idx - 1 < len(namen) else ""
-                ws_out.cell(rij_out, col_idx, naam).alignment = center_align
-                ws_out.cell(rij_out, col_idx).border = thin_border
-                if naam and naam in student_kleuren:
-                    ws_out.cell(rij_out, col_idx).fill = PatternFill(start_color=student_kleuren[naam], fill_type="solid")
 
-        rij_out += 1
+rij_out = 2
+
+
+# -----------------------------
+# Attracties schrijven (met uur-specifieke samenvoeging)
+# -----------------------------
+
+for attr in alle_losse_attracties:
+
+    ws_out.cell(rij_out, 1, attr).font = Font(bold=True)
+    ws_out.cell(rij_out, 1).fill = white_fill
+    ws_out.cell(rij_out, 1).border = thin_border
+
+    for col_idx, uur in enumerate(sorted(open_uren), start=2):
+
+        cel = ws_out.cell(rij_out, col_idx)
+        cel.border = thin_border
+        cel.alignment = center_align
+
+        # Check: hoort deze attractie bij een samenvoeging op dit uur?
+        groep = next(
+            (g for g in samengevoegd_per_uur.get(uur, []) if attr in g),
+            None
+        )
+
+        if groep:
+            samengestelde_naam = " + ".join(groep)
+            namen = assigned_map.get((uur, samengestelde_naam), [])
+
+            # Alleen in de eerste rij van de groep schrijven
+            if groep.index(attr) == 0 and namen:
+                naam = namen[0]
+                cel.value = naam
+                if naam in student_kleuren:
+                    cel.fill = PatternFill(
+                        start_color=student_kleuren[naam],
+                        fill_type="solid"
+                    )
+
+            # Cellen samenvoegen (maar 1 keer!)
+            if groep.index(attr) == 0:
+                start_row = rij_out
+                end_row = rij_out + len(groep) - 1
+                ws_out.merge_cells(
+                    start_row=start_row,
+                    end_row=end_row,
+                    start_column=col_idx,
+                    end_column=col_idx
+                )
+        else:
+            # Normale (niet-samengevoegde) attractie
+            namen = assigned_map.get((uur, attr), [])
+            if namen:
+                naam = namen[0]
+                cel.value = naam
+                if naam in student_kleuren:
+                    cel.fill = PatternFill(
+                        start_color=student_kleuren[naam],
+                        fill_type="solid"
+                    )
+
+    rij_out += 1
+
+
 
 # Pauzevlinders
 rij_out += 1
