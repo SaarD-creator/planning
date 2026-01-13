@@ -1,4 +1,4 @@
-#samenvoegen attracties voor hele dag werkt al!
+#samenvoegen attracties voor hele dag werkt al! Volgende stap...
 
 
 import streamlit as st
@@ -241,6 +241,16 @@ second_priority_order = [
 ]
 
 
+
+
+# -----------------------------
+# Bewaar losse attracties (voor uur-samenvoeging)
+# -----------------------------
+losse_attracties = set(attracties_te_plannen)
+
+
+
+
 # -----------------------------
 # Attractielijst aanpassen voor samenvoegingen
 # -----------------------------
@@ -275,7 +285,7 @@ def _groep_is_vrij(groep, gebruikte_attracties):
 # Resultaat: per uur welke samenvoegingen actief zijn
 samengevoegd_per_uur = {uur: [] for uur in open_uren}
 
-# Initieel: elke attractie vraagt 1 spot per uur
+# Init structs
 aantallen = {uur: {} for uur in open_uren}
 red_spots = {uur: set() for uur in open_uren}
 
@@ -283,27 +293,25 @@ for uur in open_uren:
 
     # 1️⃣ Beschikbare studenten dit uur
     student_count = sum(
-        1 for s in studenten
-        if uur in s["uren_beschikbaar"] and not (
-            s["is_pauzevlinder"] and uur in required_pauze_hours
-        )
+        1
+        for s in studenten
+        if uur in s["uren_beschikbaar"]
+        and not (s["is_pauzevlinder"] and uur in required_pauze_hours)
     )
 
-    # 2️⃣ Basis: elke attractie vraagt 1 spot
-    actieve_attracties = set(attracties_te_plannen)
+    # 2️⃣ Start van losse attracties (NIET de gefuseerde namen)
+    actieve_attracties = set(losse_attracties)
     benodigde_spots = len(actieve_attracties)
 
-    # 3️⃣ Tekort bepalen
     tekort = benodigde_spots - student_count
-
     gebruikte_attracties = set()
 
-    # 4️⃣ Tekort oplossen via samenvoegingen (Excel-volgorde!)
+    # 3️⃣ Tekort oplossen via samenvoegingen (volgorde uit Excel)
     if tekort > 0:
         for groep in samenvoegingen:
             groep_set = set(groep)
 
-            # groep kan alleen als alle attracties bestaan en nog niet gebruikt zijn
+            # groep moet volledig beschikbaar en nog niet gebruikt zijn
             if not groep_set.issubset(actieve_attracties):
                 continue
             if not _groep_is_vrij(groep, gebruikte_attracties):
@@ -319,20 +327,25 @@ for uur in open_uren:
             if tekort <= 0:
                 break
 
-    # 5️⃣ Effectieve attracties voor dit uur bepalen
-    effectieve_attracties = set(actieve_attracties)
+    # 4️⃣ Effectieve attracties voor dit uur bouwen
+    effectieve_attracties = set()
+    gebruikte = set()
 
     for groep in samengevoegd_per_uur[uur]:
         nieuwe_naam = " + ".join(groep)
-        for a in groep:
-            effectieve_attracties.discard(a)
         effectieve_attracties.add(nieuwe_naam)
+        gebruikte |= set(groep)
 
-    # 6️⃣ Aantallen invullen (default 1)
+    # Alles wat niet samengevoegd is blijft los
+    for attr in actieve_attracties:
+        if attr not in gebruikte:
+            effectieve_attracties.add(attr)
+
+    # 5️⃣ Basis: 1 plek per attractie
     for attr in effectieve_attracties:
         aantallen[uur][attr] = 1
 
-    # 7️⃣ Tweede plekken toekennen indien mogelijk
+    # 6️⃣ Tweede plekken toekennen indien mogelijk
     extra_spots = student_count - len(effectieve_attracties)
 
     for attr in second_priority_order:
@@ -343,7 +356,6 @@ for uur in open_uren:
                     extra_spots -= 1
                 else:
                     red_spots[uur].add(attr)
-
 
 # -----------------------------
 # Studenten die effectief inzetbaar zijn
