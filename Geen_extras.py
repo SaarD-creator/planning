@@ -1,4 +1,4 @@
-#samenvoegen attracties voor hele dag werkt al! Volgende stap...
+#samenvoegen attracties voor hele dag werkt al!
 
 
 import streamlit as st
@@ -180,12 +180,66 @@ for s in studenten:
 
 
 # -----------------------------
+# Studenten per uur voorbereiden
+# -----------------------------
+for s in studenten:
+    # Start met de "dagbrede" attracties zoals eerder berekend
+    s["attracties_per_uur"] = {}
+    for uur in open_uren:
+        # start met de dagbrede attracties
+        s["attracties_per_uur"][uur] = set(s["attracties"])
+
+
+
+# -----------------------------
 # Openingsuren
 # -----------------------------
 open_uren=[int(str(ws.cell(1,kol).value).replace("u","").strip()) for kol in range(36,45) if ws.cell(2,kol).value in [1,True,"WAAR","X"]]
 if not open_uren:
     open_uren=list(range(10,19))
 open_uren=sorted(set(open_uren))
+
+
+# -----------------------------
+# Fusies per uur bepalen op basis van beschikbare studenten
+# -----------------------------
+fusie_map_per_uur = {}
+
+for uur in open_uren:
+    # hoeveel studenten beschikbaar dit uur
+    student_count = sum(1 for s in studenten if uur in s["uren_beschikbaar"] and not (s["is_pauzevlinder"] and uur in required_pauze_hours))
+
+    # aantal attracties dat op dit uur gepland staat (dagbrede lijst)
+    attr_count = len(attracties_te_plannen)
+
+    # hoeveel samenvoegen nodig?
+    te_samenvoegen = attr_count - student_count
+
+    fusie_map_uur = {}
+    if te_samenvoegen > 0:
+        # neem groepen uit Excel-samenvoegingen, volg volgorde, zoveel als nodig
+        aantal = 0
+        for groep in samenvoegingen:
+            if aantal >= te_samenvoegen:
+                break
+            nieuwe_naam = " + ".join(groep)
+            for oude in groep:
+                fusie_map_uur[oude] = nieuwe_naam
+            aantal += len(groep) - 1  # aantal attracties dat we door deze fusie besparen
+    fusie_map_per_uur[uur] = fusie_map_uur
+
+# Pas per student per uur de attracties aan
+for s in studenten:
+    for uur in open_uren:
+        huidige = s["attracties_per_uur"][uur]
+        nieuwe = set(huidige)
+        for oude, nieuwe_naam in fusie_map_per_uur[uur].items():
+            if oude in nieuwe:
+                # verwijder oude en voeg nieuwe toe
+                nieuwe.discard(oude)
+                nieuwe.add(nieuwe_naam)
+        s["attracties_per_uur"][uur] = nieuwe
+
 
 # -----------------------------
 
@@ -241,16 +295,6 @@ second_priority_order = [
 ]
 
 
-
-
-# -----------------------------
-# Bewaar losse attracties (voor uur-samenvoeging)
-# -----------------------------
-losse_attracties = set(attracties_te_plannen)
-
-
-
-
 # -----------------------------
 # Attractielijst aanpassen voor samenvoegingen
 # -----------------------------
@@ -273,89 +317,32 @@ for nieuwe in samengevoegde_attracties:
     aantallen_raw[nieuwe] = 1
 
 
-def _groep_is_vrij(groep, gebruikte_attracties):
-    """Check of geen enkele attractie uit de groep al gebruikt is."""
-    return all(a not in gebruikte_attracties for a in groep)
-
-
 # -----------------------------
-# Compute aantallen per hour + red spots (MET UUR-SPECIFIEKE SAMENVOEGING)
+# Compute aantallen per hour + red spots
 # -----------------------------
-
-# Resultaat: per uur welke samenvoegingen actief zijn
-samengevoegd_per_uur = {uur: [] for uur in open_uren}
-
-# Init structs
-aantallen = {uur: {} for uur in open_uren}
+aantallen = {uur: {a: 1 for a in attracties_te_plannen} for uur in open_uren}
 red_spots = {uur: set() for uur in open_uren}
 
 for uur in open_uren:
-
-    # 1️⃣ Beschikbare studenten dit uur
+    # Hoeveel studenten beschikbaar dit uur (excl. pauzevlinders op duty)
     student_count = sum(
-        1
-        for s in studenten
-        if uur in s["uren_beschikbaar"]
-        and not (s["is_pauzevlinder"] and uur in required_pauze_hours)
+        1 for s in studenten
+        if uur in s["uren_beschikbaar"] and not (
+            s["is_pauzevlinder"] and uur in required_pauze_hours
+        )
     )
+    # Hoeveel attracties minimaal bemand moeten worden
+    base_spots = sum(1 for a in attracties_te_plannen if aantallen_raw[a] >= 1)
+    extra_spots = student_count - base_spots
 
-    # 2️⃣ Start van losse attracties (NIET de gefuseerde namen)
-    actieve_attracties = set(losse_attracties)
-    benodigde_spots = len(actieve_attracties)
-
-    tekort = benodigde_spots - student_count
-    gebruikte_attracties = set()
-
-    # 3️⃣ Tekort oplossen via samenvoegingen (volgorde uit Excel)
-    if tekort > 0:
-        for groep in samenvoegingen:
-            groep_set = set(groep)
-
-            # groep moet volledig beschikbaar en nog niet gebruikt zijn
-            if not groep_set.issubset(actieve_attracties):
-                continue
-            if not _groep_is_vrij(groep, gebruikte_attracties):
-                continue
-
-            besparing = len(groep) - 1
-
-            # Activeer samenvoeging
-            samengevoegd_per_uur[uur].append(groep)
-            gebruikte_attracties |= groep_set
-            tekort -= besparing
-
-            if tekort <= 0:
-                break
-
-    # 4️⃣ Effectieve attracties voor dit uur bouwen
-    effectieve_attracties = set()
-    gebruikte = set()
-
-    for groep in samengevoegd_per_uur[uur]:
-        nieuwe_naam = " + ".join(groep)
-        effectieve_attracties.add(nieuwe_naam)
-        gebruikte |= set(groep)
-
-    # Alles wat niet samengevoegd is blijft los
-    for attr in actieve_attracties:
-        if attr not in gebruikte:
-            effectieve_attracties.add(attr)
-
-    # 5️⃣ Basis: 1 plek per attractie
-    for attr in effectieve_attracties:
-        aantallen[uur][attr] = 1
-
-    # 6️⃣ Tweede plekken toekennen indien mogelijk
-    extra_spots = student_count - len(effectieve_attracties)
-
+    # Allocate 2e plekken volgens prioriteit
     for attr in second_priority_order:
         if attr in aantallen_raw and aantallen_raw[attr] == 2:
-            if attr in aantallen[uur]:
-                if extra_spots > 0:
-                    aantallen[uur][attr] = 2
-                    extra_spots -= 1
-                else:
-                    red_spots[uur].add(attr)
+            if extra_spots > 0:
+                aantallen[uur][attr] = 2
+                extra_spots -= 1
+            else:
+                red_spots[uur].add(attr)
 
 # -----------------------------
 # Studenten die effectief inzetbaar zijn
@@ -473,21 +460,28 @@ def _try_place_block_on_attr(student, block_hours, attr):
     return True
 
 def _try_place_block_any_attr(student, block_hours):
-    """Probeer dit blok te plaatsen op eender welke attractie die student kan."""
-    # Eerst attracties die nu het minst keuze hebben (kritiek), zodat we schaarste slim benutten
-    candidate_attrs = [a for a in attracties_te_plannen if a in student["attracties"]]
-    candidate_attrs.sort(key=lambda a: sum(1 for s in studenten_workend if a in s["attracties"]))
+    """Probeer dit blok te plaatsen op eender welke attractie die student kan, rekening houdend met uur-specifieke samenvoegingen."""
+    # Candidate attracties = intersectie van student-attracties voor dit uur
+    candidate_attrs = set()
+    for h in block_hours:
+        candidate_attrs.update(student["attracties_per_uur"][h])
+    candidate_attrs = list(candidate_attrs)
+    
+    # Eerst attracties die nu het minst keuze hebben (kritiek)
+    candidate_attrs.sort(key=lambda a: sum(1 for s in studenten_workend if a in s["attracties_per_uur"].get(block_hours[0], set())))
+    
     for attr in candidate_attrs:
         # vermijd dubbele toewijzing van hetzelfde attr als het niet per se moet
         if attr in student["assigned_attracties"]:
             continue
         if _try_place_block_on_attr(student, block_hours, attr):
             return True
-    # Als niets lukte zonder herhaling, laat herhaling van attractie toe als dat nodig is
+    # Als niets lukte zonder herhaling, laat herhaling van attractie toe
     for attr in candidate_attrs:
         if _try_place_block_on_attr(student, block_hours, attr):
             return True
     return False
+
 
 def _place_block_with_fallback(student, hours_seq):
     """
@@ -645,13 +639,14 @@ for _ in range(max_iterations):
 
 
 # -----------------------------
+
 # Excel output
 # -----------------------------
 wb_out = Workbook()
 ws_out = wb_out.active
 ws_out.title = "Planning"
 
-# Styles
+# Witte fill voor headers en attracties
 white_fill = PatternFill(start_color="FFFFFF", fill_type="solid")
 pv_fill = PatternFill(start_color="FFF2CC", fill_type="solid")
 extra_fill = PatternFill(start_color="FCE4D6", fill_type="solid")
@@ -661,200 +656,133 @@ thin_border = Border(
     top=Side(style="thin"), bottom=Side(style="thin")
 )
 
-# -----------------------------
-# Kleuren per student
-# -----------------------------
+# Felle, maar lichte pastelkleuren (gelijkmatige felheid, veel variatie)
 studenten_namen = sorted({s["naam"] for s in studenten})
+# Pauzevlinders krijgen ook een kleur uit het schema
 alle_namen = studenten_namen + [pv for pv in pauzevlinder_namen if pv not in studenten_namen]
-
+# Unieke kleuren genereren: als er te weinig kleuren zijn, maak er meer met lichte variatie
 base_colors = [
-    "FFB3BA","FFDFBA","FFFFBA","BAFFC9","BAE1FF","E0BBE4","957DAD","D291BC","FEC8D8","FFDFD3",
-    "B5EAD7","C7CEEA","FFDAC1","E2F0CB","F6DFEB","F9E2AE","B6E2D3","B6D0E2","F6E2B3","F7C5CC"
+    "FFB3BA", "FFDFBA", "FFFFBA", "BAFFC9", "BAE1FF", "E0BBE4", "957DAD", "D291BC", "FEC8D8", "FFDFD3",
+    "B5EAD7", "C7CEEA", "FFDAC1", "E2F0CB", "F6DFEB", "F9E2AE", "B6E2D3", "B6D0E2", "F6E2B3", "F7C5CC",
+    "F7E6C5", "C5F7D6", "C5E6F7", "F7F6C5", "F7C5F7", "C5C5F7", "C5F7F7", "F7C5C5", "C5F7C5", "F7E2C5",
+    "E2F7C5", "C5F7E2", "E2C5F7", "C5E2F7", "F7C5E2", "F7F7C5", "C5F7F7", "F7C5F7", "C5C5F7", "F7C5C5",
+    "C5F7C5", "F7E2C5", "E2F7C5", "C5F7E2", "E2C5F7", "C5E2F7", "F7C5E2", "E2C5F7", "C5F7E2", "E2F7C5"
 ]
+import colorsys
+def pastel_variant(hex_color, variant):
+    # hex_color: 'RRGGBB', variant: int
+    r = int(hex_color[0:2], 16) / 255.0
+    g = int(hex_color[2:4], 16) / 255.0
+    b = int(hex_color[4:6], 16) / 255.0
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    # kleine variatie in lichtheid en saturatie
+    l = min(1, l + 0.03 * (variant % 3))
+    s = max(0.3, s - 0.04 * (variant % 5))
+    r2, g2, b2 = colorsys.hls_to_rgb(h, l, s)
+    return f"{int(r2*255):02X}{int(g2*255):02X}{int(b2*255):02X}"
 
-student_kleuren = {}
-for i, naam in enumerate(alle_namen):
-    student_kleuren[naam] = base_colors[i % len(base_colors)]
+unique_colors = []
+needed = len(alle_namen)
+variant = 0
+while len(unique_colors) < needed:
+    for base in base_colors:
+        if len(unique_colors) >= needed:
+            break
+        # voeg lichte variatie toe als nodig
+        color = pastel_variant(base, variant) if variant > 0 else base
+        if color not in unique_colors:
+            unique_colors.append(color)
+    variant += 1
 
-# -----------------------------
+student_kleuren = dict(zip(alle_namen, unique_colors))
+
 # Header
-# -----------------------------
 ws_out.cell(1, 1, vandaag).font = Font(bold=True)
 ws_out.cell(1, 1).fill = white_fill
-
 for col_idx, uur in enumerate(sorted(open_uren), start=2):
-    c = ws_out.cell(1, col_idx, f"{uur}:00")
-    c.font = Font(bold=True)
-    c.fill = white_fill
-    c.alignment = center_align
-    c.border = thin_border
-
-# -----------------------------
-# Voorbereiding layout
-# -----------------------------
-dagbreed_samengevoegd = set(samengevoegde_attracties)
-
-uur_samengevoegd_los = set()
-for groepen in samengevoegd_per_uur.values():
-    for groep in groepen:
-        for a in groep:
-            uur_samengevoegd_los.add(a)
+    ws_out.cell(1, col_idx, f"{uur}:00").font = Font(bold=True)
+    ws_out.cell(1, col_idx).fill = white_fill
+    ws_out.cell(1, col_idx).alignment = center_align
+    ws_out.cell(1, col_idx).border = thin_border
 
 rij_out = 2
-
-# -----------------------------
-# Attracties
-# -----------------------------
 for attr in attracties_te_plannen:
+    # FIX: correcte berekening max_pos
+    max_pos = max(
+        max(aantallen[uur].get(attr, 1) for uur in open_uren),
+        max(per_hour_assigned_counts[uur].get(attr, 0) for uur in open_uren)
+    )
 
-    # === DAGBREED SAMENGEVOEGD ===
-    if attr in dagbreed_samengevoegd:
-        ws_out.cell(rij_out, 1, attr).font = Font(bold=True)
+    for pos_idx in range(1, max_pos + 1):
+        naam_attr = attr if max_pos == 1 else f"{attr} {pos_idx}"
+        ws_out.cell(rij_out, 1, naam_attr).font = Font(bold=True)
         ws_out.cell(rij_out, 1).fill = white_fill
         ws_out.cell(rij_out, 1).border = thin_border
 
-        for col_idx, uur in enumerate(sorted(open_uren), start=2):
-            cel = ws_out.cell(rij_out, col_idx)
-            cel.border = thin_border
-            cel.alignment = center_align
 
-            namen = assigned_map.get((uur, attr), [])
-            if namen:
-                naam = namen[0]
-                cel.value = naam
-                cel.fill = PatternFill(start_color=student_kleuren.get(naam,"FFFFFF"), fill_type="solid")
+        for col_idx, uur in enumerate(sorted(open_uren), start=2):
+            # Red spots nu wit maken
+            if attr in red_spots.get(uur, set()) and pos_idx == 2:
+                ws_out.cell(rij_out, col_idx, "").fill = white_fill
+                ws_out.cell(rij_out, col_idx).border = thin_border
+            else:
+                namen = assigned_map.get((uur, attr), [])
+                naam = namen[pos_idx - 1] if pos_idx - 1 < len(namen) else ""
+                ws_out.cell(rij_out, col_idx, naam).alignment = center_align
+                ws_out.cell(rij_out, col_idx).border = thin_border
+                if naam and naam in student_kleuren:
+                    ws_out.cell(rij_out, col_idx).fill = PatternFill(start_color=student_kleuren[naam], fill_type="solid")
 
         rij_out += 1
-        continue
 
-    # === UUR-SPECIFIEK SAMENGEVOEGD ===
-    if attr in uur_samengevoegd_los:
-
-        groepen = set()
-        for g_list in samengevoegd_per_uur.values():
-            for g in g_list:
-                if attr in g:
-                    groepen |= set(g)
-
-        losse = sorted(groepen)
-
-        for sub_attr in losse:
-            ws_out.cell(rij_out, 1, sub_attr).font = Font(bold=True)
-            ws_out.cell(rij_out, 1).fill = white_fill
-            ws_out.cell(rij_out, 1).border = thin_border
-
-            for col_idx, uur in enumerate(sorted(open_uren), start=2):
-                cel = ws_out.cell(rij_out, col_idx)
-                cel.border = thin_border
-                cel.alignment = center_align
-
-                groep = next((g for g in samengevoegd_per_uur.get(uur, []) if sub_attr in g), None)
-
-                if groep:
-                    samengestelde_naam = " + ".join(groep)
-                    namen = assigned_map.get((uur, samengestelde_naam), [])
-
-                    if groep.index(sub_attr) == 0 and namen:
-                        naam = namen[0]
-                        cel.value = naam
-                        cel.fill = PatternFill(start_color=student_kleuren.get(naam,"FFFFFF"), fill_type="solid")
-
-                    if groep.index(sub_attr) == 0:
-                        ws_out.merge_cells(
-                            start_row=rij_out,
-                            end_row=rij_out + len(groep) - 1,
-                            start_column=col_idx,
-                            end_column=col_idx
-                        )
-                else:
-                    namen = assigned_map.get((uur, sub_attr), [])
-                    if namen:
-                        naam = namen[0]
-                        cel.value = naam
-                        cel.fill = PatternFill(start_color=student_kleuren.get(naam,"FFFFFF"), fill_type="solid")
-
-            rij_out += 1
-
-        continue
-
-    # === NORMALE ATTRACTIE ===
-    ws_out.cell(rij_out, 1, attr).font = Font(bold=True)
-    ws_out.cell(rij_out, 1).fill = white_fill
-    ws_out.cell(rij_out, 1).border = thin_border
-
-    for col_idx, uur in enumerate(sorted(open_uren), start=2):
-        cel = ws_out.cell(rij_out, col_idx)
-        cel.border = thin_border
-        cel.alignment = center_align
-
-        namen = assigned_map.get((uur, attr), [])
-        if namen:
-            naam = namen[0]
-            cel.value = naam
-            cel.fill = PatternFill(start_color=student_kleuren.get(naam,"FFFFFF"), fill_type="solid")
-
-    rij_out += 1
-
-# -----------------------------
 # Pauzevlinders
-# -----------------------------
 rij_out += 1
-for idx, pvnaam in enumerate(pauzevlinder_namen, start=1):
-    ws_out.cell(rij_out, 1, f"Pauzevlinder {idx}").font = Font(bold=True)
-    ws_out.cell(rij_out, 1).fill = white_fill
+for pv_idx, pvnaam in enumerate(pauzevlinder_namen, start=1):
+    ws_out.cell(rij_out, 1, f"Pauzevlinder {pv_idx}").font = Font(bold=True)  # tekst blijft zwart
+    ws_out.cell(rij_out, 1).fill = white_fill  # cel wit
     ws_out.cell(rij_out, 1).border = thin_border
-
     for col_idx, uur in enumerate(sorted(open_uren), start=2):
         naam = pvnaam if uur in required_pauze_hours else ""
-        cel = ws_out.cell(rij_out, col_idx, naam)
-        cel.border = thin_border
-        cel.alignment = center_align
-        if naam:
-            cel.fill = PatternFill(start_color=student_kleuren.get(naam,"FFFFFF"), fill_type="solid")
-
+        ws_out.cell(rij_out, col_idx, naam).alignment = center_align
+        ws_out.cell(rij_out, col_idx).border = thin_border
+        if naam and naam in student_kleuren:
+            ws_out.cell(rij_out, col_idx).fill = PatternFill(start_color=student_kleuren[naam], fill_type="solid")
     rij_out += 1
 
-# -----------------------------
-# Extra’s
-# -----------------------------
+# Extra's per rij
 rij_out += 1
 extras_flat = []
-for uur in open_uren:
+for uur in sorted(open_uren):
     for naam in extra_assignments[uur]:
         if naam not in extras_flat:
             extras_flat.append(naam)
-
-for idx, naam in enumerate(extras_flat, start=1):
-    ws_out.cell(rij_out, 1, f"Extra {idx}").font = Font(bold=True)
+for extra_idx, naam in enumerate(extras_flat, start=1):
+    ws_out.cell(rij_out, 1, f"Extra {extra_idx}").font = Font(bold=True)
     ws_out.cell(rij_out, 1).fill = white_fill
     ws_out.cell(rij_out, 1).border = thin_border
-
     for col_idx, uur in enumerate(sorted(open_uren), start=2):
-        val = naam if naam in extra_assignments[uur] else ""
-        cel = ws_out.cell(rij_out, col_idx, val)
-        cel.border = thin_border
-        cel.alignment = center_align
-        if val:
-            cel.fill = PatternFill(start_color=student_kleuren.get(val,"FFFFFF"), fill_type="solid")
-
+        # Toon naam alleen als deze extra op dit uur is ingepland
+        cell_naam = naam if naam in extra_assignments[uur] else ""
+        ws_out.cell(rij_out, col_idx, cell_naam).alignment = center_align
+        ws_out.cell(rij_out, col_idx).border = thin_border
+        if cell_naam and cell_naam in student_kleuren:
+            ws_out.cell(rij_out, col_idx).fill = PatternFill(start_color=student_kleuren[cell_naam], fill_type="solid")
     rij_out += 1
 
-# -----------------------------
 # Kolombreedte
-# -----------------------------
 for col in range(1, len(open_uren) + 2):
     ws_out.column_dimensions[get_column_letter(col)].width = 18
 
-# -----------------------------
-# Student totalen (voor latere code)
-# -----------------------------
+# ---- student_totalen beschikbaar maken voor volgende delen ----
 from collections import defaultdict
 student_totalen = defaultdict(int)
-
 for row in ws_out.iter_rows(min_row=2, values_only=True):
     for naam in row[1:]:
-        if naam:
+        if naam and str(naam).strip() != "":
             student_totalen[naam] += 1
+
+
+
 
 
 
