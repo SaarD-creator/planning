@@ -179,8 +179,6 @@ for s in studenten:
     s["attracties"] = list(nieuwe_attracties)
 
 
-
-
 # -----------------------------
 # Openingsuren
 # -----------------------------
@@ -188,19 +186,6 @@ open_uren=[int(str(ws.cell(1,kol).value).replace("u","").strip()) for kol in ran
 if not open_uren:
     open_uren=list(range(10,19))
 open_uren=sorted(set(open_uren))
-
-
-# -----------------------------
-# Studenten per uur voorbereiden
-# -----------------------------
-for s in studenten:
-    # Start met de "dagbrede" attracties zoals eerder berekend
-    s["attracties_per_uur"] = {}
-    for uur in open_uren:
-        # start met de dagbrede attracties
-        s["attracties_per_uur"][uur] = set(s["attracties"])
-
-
 
 # -----------------------------
 
@@ -221,6 +206,39 @@ def compute_pauze_hours(open_uren):
         return list(open_uren)
 
 required_pauze_hours=compute_pauze_hours(open_uren)
+
+def pas_samenvoegingen_per_uur_toe(
+    uur,
+    actieve_attracties,
+    student_count,
+    samenvoegingen
+):
+    """
+    Past samenvoegingen toe voor één specifiek uur, 
+    in volgorde BG5->BI5, BG6->BI6, ...
+    totdat student_count >= aantal attracties.
+    """
+    actieve = list(actieve_attracties)
+
+    for groep in samenvoegingen:
+        # Welke attracties uit deze groep zijn nog actief?
+        aanwezig = [a for a in groep if a in actieve]
+
+        if len(aanwezig) >= 2:
+            # Verwijder losse attracties
+            for a in aanwezig:
+                actieve.remove(a)
+
+            # Voeg samengevoegde attractie toe
+            nieuwe_naam = " + ".join(groep)
+            actieve.append(nieuwe_naam)
+
+        # Stop zodra er genoeg studenten zijn
+        if student_count >= len(actieve):
+            break
+
+    return actieve
+
 
 for idx,pvnaam in enumerate(pauzevlinder_namen,start=1):
     for s in studenten:
@@ -263,7 +281,7 @@ second_priority_order = [
 oude_attracties = set(fusie_map.keys())
 
 nieuwe_lijst = []
-for attr in attracties_te_plannen:
+for attr in attracties_per_uur[uur]:
     if attr in oude_attracties:
         continue
     nieuwe_lijst.append(attr)
@@ -280,8 +298,10 @@ for nieuwe in samengevoegde_attracties:
 
 # -----------------------------
 # Compute aantallen per hour + red spots
+# + per uur samenvoegen indien nodig
 # -----------------------------
-aantallen = {uur: {a: 1 for a in attracties_te_plannen} for uur in open_uren}
+
+aantallen = {uur: {} for uur in open_uren}
 red_spots = {uur: set() for uur in open_uren}
 
 for uur in open_uren:
@@ -292,18 +312,48 @@ for uur in open_uren:
             s["is_pauzevlinder"] and uur in required_pauze_hours
         )
     )
-    # Hoeveel attracties minimaal bemand moeten worden
-    base_spots = sum(1 for a in attracties_te_plannen if aantallen_raw[a] >= 1)
+
+    # Start: alle attracties open (daglogica)
+    attracties_per_uur[uur] = list(attracties_te_plannen)
+
+    # --- NIEUW: per uur attracties samenvoegen indien te weinig studenten ---
+    if student_count < len(attracties_per_uur[uur]):
+        attracties_per_uur[uur] = pas_samenvoegingen_per_uur_toe(
+            uur,
+            attracties_per_uur[uur],
+            student_count,
+            samenvoegingen
+        )
+
+    # Basis: 1 plek per actieve attractie
+    for attr in attracties_per_uur[uur]:
+        aantallen[uur][attr] = 1
+
+    # Extra plekken (2e man) berekenen
+    base_spots = len(attracties_per_uur[uur])
     extra_spots = student_count - base_spots
 
     # Allocate 2e plekken volgens prioriteit
     for attr in second_priority_order:
         if attr in aantallen_raw and aantallen_raw[attr] == 2:
+            if attr not in aantallen[uur]:
+                continue
             if extra_spots > 0:
                 aantallen[uur][attr] = 2
                 extra_spots -= 1
             else:
                 red_spots[uur].add(attr)
+
+
+# -----------------------------
+# Attracties per uur (start: alles open zoals daglogica)
+# -----------------------------
+attracties_per_uur = {
+    uur: list(attracties_te_plannen)
+    for uur in open_uren
+}
+
+
 
 # -----------------------------
 # Studenten die effectief inzetbaar zijn
@@ -317,48 +367,6 @@ def kritieke_score(attr, studenten_list):
     return sum(1 for s in studenten_list if attr in s["attracties"])
 
 attracties_te_plannen.sort(key=lambda a: kritieke_score(a, studenten_workend))
-
-
-
-# -----------------------------
-# Fusies per uur bepalen op basis van beschikbare studenten
-# -----------------------------
-fusie_map_per_uur = {}
-
-for uur in open_uren:
-    # hoeveel studenten beschikbaar dit uur
-    student_count = sum(1 for s in studenten if uur in s["uren_beschikbaar"] and not (s["is_pauzevlinder"] and uur in required_pauze_hours))
-
-    # aantal attracties dat op dit uur gepland staat (dagbrede lijst)
-    attr_count = len(attracties_te_plannen)
-
-    # hoeveel samenvoegen nodig?
-    te_samenvoegen = attr_count - student_count
-
-    fusie_map_uur = {}
-    if te_samenvoegen > 0:
-        # neem groepen uit Excel-samenvoegingen, volg volgorde, zoveel als nodig
-        aantal = 0
-        for groep in samenvoegingen:
-            if aantal >= te_samenvoegen:
-                break
-            nieuwe_naam = " + ".join(groep)
-            for oude in groep:
-                fusie_map_uur[oude] = nieuwe_naam
-            aantal += len(groep) - 1  # aantal attracties dat we door deze fusie besparen
-    fusie_map_per_uur[uur] = fusie_map_uur
-
-# Pas per student per uur de attracties aan
-for s in studenten:
-    for uur in open_uren:
-        huidige = s["attracties_per_uur"][uur]
-        nieuwe = set(huidige)
-        for oude, nieuwe_naam in fusie_map_per_uur[uur].items():
-            if oude in nieuwe:
-                # verwijder oude en voeg nieuwe toe
-                nieuwe.discard(oude)
-                nieuwe.add(nieuwe_naam)
-        s["attracties_per_uur"][uur] = nieuwe
 
 # -----------------------------
 # Assign per student
@@ -376,14 +384,18 @@ studenten_sorted = sorted(studenten_workend, key=lambda s: s["aantal_attracties"
 # Voorbereiden: expand naar posities per uur
 # -----------------------------
 positions_per_hour = {uur: [] for uur in open_uren}
+
 for uur in open_uren:
-    for attr in attracties_te_plannen:
+    for attr in attracties_per_uur[uur]:
         max_pos = aantallen[uur].get(attr, 1)
-        for pos in range(1, max_pos+1):
-            # sla rode posities over
-            if attr in red_spots[uur] and pos == 2:
-                continue
+
+        # respecteer red spots
+        if attr in red_spots.get(uur, set()):
+            max_pos = 1
+
+        for pos in range(1, max_pos + 1):
             positions_per_hour[uur].append((attr, pos))
+
 
 # Mapping: welke student staat waar
 assigned_map = defaultdict(list)  # (uur, attr) -> [namen]
@@ -463,28 +475,21 @@ def _try_place_block_on_attr(student, block_hours, attr):
     return True
 
 def _try_place_block_any_attr(student, block_hours):
-    """Probeer dit blok te plaatsen op eender welke attractie die student kan, rekening houdend met uur-specifieke samenvoegingen."""
-    # Candidate attracties = intersectie van student-attracties voor dit uur
-    candidate_attrs = set()
-    for h in block_hours:
-        candidate_attrs.update(student["attracties_per_uur"][h])
-    candidate_attrs = list(candidate_attrs)
-    
-    # Eerst attracties die nu het minst keuze hebben (kritiek)
-    candidate_attrs.sort(key=lambda a: sum(1 for s in studenten_workend if a in s["attracties_per_uur"].get(block_hours[0], set())))
-    
+    """Probeer dit blok te plaatsen op eender welke attractie die student kan."""
+    # Eerst attracties die nu het minst keuze hebben (kritiek), zodat we schaarste slim benutten
+    candidate_attrs = [a for a in attracties_te_plannen if a in student["attracties"]]
+    candidate_attrs.sort(key=lambda a: sum(1 for s in studenten_workend if a in s["attracties"]))
     for attr in candidate_attrs:
         # vermijd dubbele toewijzing van hetzelfde attr als het niet per se moet
         if attr in student["assigned_attracties"]:
             continue
         if _try_place_block_on_attr(student, block_hours, attr):
             return True
-    # Als niets lukte zonder herhaling, laat herhaling van attractie toe
+    # Als niets lukte zonder herhaling, laat herhaling van attractie toe als dat nodig is
     for attr in candidate_attrs:
         if _try_place_block_on_attr(student, block_hours, attr):
             return True
     return False
-
 
 def _place_block_with_fallback(student, hours_seq):
     """
@@ -613,7 +618,7 @@ max_iterations = 5
 for _ in range(max_iterations):
     changes_made = False
     for uur in open_uren:
-        for attr in attracties_te_plannen:
+        for attr in attracties_per_uur[uur]:
             max_pos = aantallen[uur].get(attr, 1)
             if attr in red_spots.get(uur, set()):
                 max_pos = 1
@@ -709,7 +714,7 @@ for col_idx, uur in enumerate(sorted(open_uren), start=2):
     ws_out.cell(1, col_idx).border = thin_border
 
 rij_out = 2
-for attr in attracties_te_plannen:
+for attr in attracties_per_uur[uur]:
     # FIX: correcte berekening max_pos
     max_pos = max(
         max(aantallen[uur].get(attr, 1) for uur in open_uren),
