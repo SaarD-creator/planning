@@ -273,27 +273,13 @@ second_priority_order = [
     if ws["BA" + str(rij)].value
 ]
 
-
 # -----------------------------
-# Attractielijst aanpassen voor samenvoegingen
+# Attracties per uur (initieel: daglogica)
 # -----------------------------
-
-oude_attracties = set(fusie_map.keys())
-
-nieuwe_lijst = []
-for attr in attracties_per_uur[uur]:
-    if attr in oude_attracties:
-        continue
-    nieuwe_lijst.append(attr)
-
-# Voeg samengevoegde attracties toe
-for nieuwe in samengevoegde_attracties:
-    if nieuwe not in nieuwe_lijst:
-        nieuwe_lijst.append(nieuwe)
-
-attracties_te_plannen = nieuwe_lijst
-for nieuwe in samengevoegde_attracties:
-    aantallen_raw[nieuwe] = 1
+attracties_per_uur = {
+    uur: list(attracties_te_plannen)
+    for uur in open_uren
+}
 
 
 # -----------------------------
@@ -343,15 +329,6 @@ for uur in open_uren:
                 extra_spots -= 1
             else:
                 red_spots[uur].add(attr)
-
-
-# -----------------------------
-# Attracties per uur (start: alles open zoals daglogica)
-# -----------------------------
-attracties_per_uur = {
-    uur: list(attracties_te_plannen)
-    for uur in open_uren
-}
 
 
 
