@@ -281,7 +281,15 @@ attracties_per_uur = {
     for uur in open_uren
 }
 
+# -----------------------------
+# Init per-hour assigned counts (per uur actieve attracties)
+# -----------------------------
+per_hour_assigned_counts = {
+    uur: {a: 0 for a in attracties_per_uur[uur]}
+    for uur in open_uren
+}
 
+    
 # -----------------------------
 # Compute aantallen per hour + red spots
 # + per uur samenvoegen indien nodig
@@ -423,7 +431,8 @@ def _max_spots_for(attr, uur):
     return max_spots
 
 def _has_capacity(attr, uur):
-    return per_hour_assigned_counts[uur][attr] < _max_spots_for(attr, uur)
+    return per_hour_assigned_counts[uur].get(attr, 0) < _max_spots_for(attr, uur)
+
 
 def _try_place_block_on_attr(student, block_hours, attr):
     """Check capaciteit in alle uren en plaats dan in één keer, met max 4 uur per attractie per dag (positie 1 en 2 tellen samen)."""
@@ -452,21 +461,35 @@ def _try_place_block_on_attr(student, block_hours, attr):
     return True
 
 def _try_place_block_any_attr(student, block_hours):
-    """Probeer dit blok te plaatsen op eender welke attractie die student kan."""
-    # Eerst attracties die nu het minst keuze hebben (kritiek), zodat we schaarste slim benutten
-    candidate_attrs = [a for a in attracties_te_plannen if a in student["attracties"]]
-    candidate_attrs.sort(key=lambda a: sum(1 for s in studenten_workend if a in s["attracties"]))
+    """Probeer dit blok te plaatsen op eender welke attractie die student kan,
+    rekening houdend met per-uur actieve attracties."""
+    # Kandidaten = doorsnede van:
+    # - attracties die student kan
+    # - attracties die in ALLE uren van dit blok bestaan
+    candidate_attrs = []
+    for attr in student["attracties"]:
+        if all(attr in attracties_per_uur[h] for h in block_hours):
+            candidate_attrs.append(attr)
+
+    # Sorteer op kritieke score
+    candidate_attrs.sort(
+        key=lambda a: sum(1 for s in studenten_workend if a in s["attracties"])
+    )
+
+    # Eerst zonder herhaling
     for attr in candidate_attrs:
-        # vermijd dubbele toewijzing van hetzelfde attr als het niet per se moet
         if attr in student["assigned_attracties"]:
             continue
         if _try_place_block_on_attr(student, block_hours, attr):
             return True
-    # Als niets lukte zonder herhaling, laat herhaling van attractie toe als dat nodig is
+
+    # Daarna herhaling toelaten
     for attr in candidate_attrs:
         if _try_place_block_on_attr(student, block_hours, attr):
             return True
+
     return False
+
 
 def _place_block_with_fallback(student, hours_seq):
     """
@@ -541,7 +564,7 @@ def doorschuif_leegplek(uur, attr, pos_idx, student_naam, stap, max_stappen=5):
         return False
 
     kandidaten = []
-    for b_attr in attracties_te_plannen:
+    for b_attr in attracties_per_uur[uur]:
         b_namen = assigned_map.get((uur, b_attr), [])
         for b_pos, b_naam in enumerate(b_namen):
             if not b_naam or b_naam == student_naam:
@@ -691,7 +714,13 @@ for col_idx, uur in enumerate(sorted(open_uren), start=2):
     ws_out.cell(1, col_idx).border = thin_border
 
 rij_out = 2
-for attr in attracties_per_uur[uur]:
+alle_output_attracties = []
+for uur in open_uren:
+    for attr in attracties_per_uur[uur]:
+        if attr not in alle_output_attracties:
+            alle_output_attracties.append(attr)
+
+for attr in alle_output_attracties:
     # FIX: correcte berekening max_pos
     max_pos = max(
         max(aantallen[uur].get(attr, 1) for uur in open_uren),
