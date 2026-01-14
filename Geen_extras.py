@@ -281,14 +281,6 @@ attracties_per_uur = {
     for uur in open_uren
 }
 
-# -----------------------------
-# Init per-hour assigned counts (per uur actieve attracties)
-# -----------------------------
-per_hour_assigned_counts = {
-    uur: {a: 0 for a in attracties_per_uur[uur]}
-    for uur in open_uren
-}
-
     
 # -----------------------------
 # Compute aantallen per hour + red spots
@@ -338,6 +330,13 @@ for uur in open_uren:
             else:
                 red_spots[uur].add(attr)
 
+# -----------------------------
+# Init per-hour assigned counts (NA samenvoegingen!)
+# -----------------------------
+per_hour_assigned_counts = {
+    uur: {a: 0 for a in attracties_per_uur[uur]}
+    for uur in open_uren
+}
 
 
 # -----------------------------
@@ -357,7 +356,6 @@ attracties_te_plannen.sort(key=lambda a: kritieke_score(a, studenten_workend))
 # Assign per student
 # -----------------------------
 assigned_map = defaultdict(list)  # (uur, attr) -> list of student-names
-per_hour_assigned_counts = {uur: {a: 0 for a in attracties_te_plannen} for uur in open_uren}
 extra_assignments = defaultdict(list)
 
 MAX_CONSEC = 4
