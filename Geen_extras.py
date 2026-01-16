@@ -250,6 +250,25 @@ for nieuwe in samengevoegde_attracties:
 actieve_attracties_per_uur = {}
 
 for uur in open_uren:
+    samengroepen = uur_samenvoegingen.get(uur, [])
+
+    # samengestelde attracties die DIT uur actief zijn
+    samengestelde = {" + ".join(g) for g in samengroepen}
+
+    # losse attracties die in een samenvoeging zitten
+    losse_in_samenvoeging = {a for g in samengroepen for a in g}
+
+    # 1️⃣ Als samenvoeging actief is → losse attracties verbieden
+    for attr in losse_in_samenvoeging:
+        red_spots[uur].add(attr)
+
+    # 2️⃣ Als samenvoeging NIET actief is → samenvoeging verbieden
+    for sameng in samengevoegde_attracties:
+        if sameng not in samengestelde:
+            red_spots[uur].add(sameng)
+
+
+for uur in open_uren:
     actief = set(attracties_te_plannen)
 
     for groep in uur_samenvoegingen.get(uur, []):
