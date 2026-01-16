@@ -24,7 +24,8 @@ if not uploaded_file:
     st.warning("Upload eerst het Excelbestand met de gegevens om verder te gaan.")
     st.stop()
 
-wb = load_workbook(BytesIO(uploaded_file.read()))
+wb = load_workbook(BytesIO(uploaded_file.read()), data_only=True)
+
 ws = wb["Blad1"]
 
 # -----------------------------
