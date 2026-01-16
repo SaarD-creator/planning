@@ -267,23 +267,6 @@ for uur in open_uren:
 
 
 
-for uur in open_uren:
-    samengroepen = uur_samenvoegingen.get(uur, [])
-
-    # alle samengestelde attracties
-    samengestelde = {" + ".join(g) for g in samengroepen}
-
-    # alle losse attracties die in een samengroep zitten
-    losse_in_samenvoeging = {a for g in samengroepen for a in g}
-
-    # 1️⃣ Als samengestelde actief is → losse attracties verbieden
-    for attr in losse_in_samenvoeging:
-        red_spots[uur].add(attr)
-
-    # 2️⃣ Als samengestelde NIET actief is → samengestelde verbieden
-    for sameng in samengevoegde_attracties:
-        if sameng not in samengestelde:
-            red_spots[uur].add(sameng)
 
 
 # -----------------------------
