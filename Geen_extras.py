@@ -139,7 +139,7 @@ for rij in range(2,500):
 uur_samenvoegingen = defaultdict(list)
 
 # Kolommen AJ (=10-11u) t.e.m. AR (=18-19u)
-uur_kolommen = list(range(36, 44))  # AJ=36
+uur_kolommen = list(range(36, 45))  # AJ=36
 
 for rij in range(14, 22):  # 14 t.e.m. 21
     # lees attracties in AS–AU
