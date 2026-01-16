@@ -265,28 +265,6 @@ for uur in open_uren:
 
     actieve_attracties_per_uur[uur] = actief
 
-# -----------------------------
-# Red spots for samengestelde attracties
-# -----------------------------
-
-for uur in open_uren:
-    # Groepen die dit uur samengevoegd zijn
-    groepen = uur_samenvoegingen.get(uur, [])
-
-    # Samengestelde attracties die DIT uur actief zijn
-    samengestelde = set(" + ".join(g) for g in groepen)
-
-    # Losse attracties die in een samenvoeging zitten
-    losse_in_samenvoeging = set(a for g in groepen for a in g)
-
-    # 1️⃣ Als samenvoeging actief is → losse attracties blokkeren
-    for attr in losse_in_samenvoeging:
-        red_spots[uur].add(attr)
-
-    # 2️⃣ Als samenvoeging NIET actief is → samenvoeging blokkeren
-    for samengestelde_attr in samengevoegde_attracties:
-        if samengestelde_attr not in samengestelde:
-            red_spots[uur].add(samengestelde_attr)
 
 
 for uur in open_uren:
@@ -337,6 +315,31 @@ for uur in open_uren:
                 extra_spots -= 1
             else:
                 red_spots[uur].add(attr)
+
+
+# -----------------------------
+# Red spots for samengestelde attracties
+# -----------------------------
+
+for uur in open_uren:
+    # Groepen die dit uur samengevoegd zijn
+    groepen = uur_samenvoegingen.get(uur, [])
+
+    # Samengestelde attracties die DIT uur actief zijn
+    samengestelde = set(" + ".join(g) for g in groepen)
+
+    # Losse attracties die in een samenvoeging zitten
+    losse_in_samenvoeging = set(a for g in groepen for a in g)
+
+    # 1️⃣ Samenvoeging actief → losse attracties verbieden
+    for attr in losse_in_samenvoeging:
+        red_spots[uur].add(attr)
+
+    # 2️⃣ Samenvoeging NIET actief → samenvoeging verbieden
+    for samengestelde_attr in samengevoegde_attracties:
+        if samengestelde_attr not in samengestelde:
+            red_spots[uur].add(samengestelde_attr)
+
 
 # -----------------------------
 # Studenten die effectief inzetbaar zijn
