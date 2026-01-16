@@ -127,57 +127,48 @@ for rij in range(2,500):
 
 
 # -----------------------------
-# Samenvoeg-attracties (dagbreed)
+# Samenvoeg-attracties (per uur)
 # -----------------------------
 
-samenvoegingen = []  # lijst van lijsten, bv [["A","B"], ["C","D","E"]]
+# Resultaat:
+# uur_samenvoegingen = {
+#   10: [ ["Attractie 3", "Attractie 5"] ],
+#   11: [ ["Attractie 2", "Attractie 7", "Attractie 9"] ],
+# }
 
-for rij in range(5, 12):  # BG5 t.e.m. BJ11
-    actief = ws[f"BJ{rij}"].value in [1, True, "WAAR", "X"]
-    if not actief:
+uur_samenvoegingen = defaultdict(list)
+
+# Kolommen AJ (=10-11u) t.e.m. AR (=18-19u)
+uur_kolommen = list(range(36, 44))  # AJ=36
+
+for rij in range(14, 22):  # 14 t.e.m. 21
+    # lees attracties in AS–AU
+    groep = []
+    for col in range(45, 48):  # AS, AT, AU
+        val = ws.cell(rij, col).value
+        if val:
+            groep.append(str(val).strip())
+
+    if len(groep) < 2:
         continue
 
-    attrs = []
-    for col in ["BG", "BH", "BI"]:
-        val = ws[f"{col}{rij}"].value
-        if val:
-            attrs.append(str(val).strip())
+    # check per uur of hokje aan staat
+    for idx, kol in enumerate(uur_kolommen):
+        if ws.cell(rij, kol).value in [1, True, "WAAR", "X"]:
+            uur = 10 + idx
+            uur_samenvoegingen[uur].append(groep)
 
-    if len(attrs) >= 2:
-        samenvoegingen.append(attrs)
 
-# Mapping: oude attractie -> nieuwe samengevoegde attractie
-fusie_map = {}
-
-# Lijst van nieuwe attractienamen
-samengevoegde_attracties = []
-
-for groep in samenvoegingen:
-    nieuwe_naam = " + ".join(groep)  # bv "A + B"
-    samengevoegde_attracties.append(nieuwe_naam)
-    for oude in groep:
-        fusie_map[oude] = nieuwe_naam
 # -----------------------------
-# Studenten aanpassen voor samengevoegde attracties
+# Alle mogelijke samengevoegde attracties (namen)
 # -----------------------------
 
-for s in studenten:
-    huidige = set(s["attracties"])
-    nieuwe_attracties = set(huidige)
+samengevoegde_attracties = set()
 
-    for groep in samenvoegingen:
-        groep_set = set(groep)
+for groepen in uur_samenvoegingen.values():
+    for groep in groepen:
+        samengevoegde_attracties.add(" + ".join(groep))
 
-        if groep_set.issubset(huidige):
-            # student kan ALLES → fusie toepassen
-            nieuwe_naam = " + ".join(groep)
-            nieuwe_attracties -= groep_set
-            nieuwe_attracties.add(nieuwe_naam)
-        else:
-            # student kan niet alles → losse attracties verdwijnen
-            nieuwe_attracties -= groep_set
-
-    s["attracties"] = list(nieuwe_attracties)
 
 
 # -----------------------------
@@ -243,25 +234,34 @@ second_priority_order = [
 
 
 # -----------------------------
-# Attractielijst aanpassen voor samenvoegingen
+# Attractielijst uitbreiden met samengevoegde attracties (globaal)
 # -----------------------------
 
-oude_attracties = set(fusie_map.keys())
-
-nieuwe_lijst = []
-for attr in attracties_te_plannen:
-    if attr in oude_attracties:
-        continue
-    nieuwe_lijst.append(attr)
-
-# Voeg samengevoegde attracties toe
 for nieuwe in samengevoegde_attracties:
-    if nieuwe not in nieuwe_lijst:
-        nieuwe_lijst.append(nieuwe)
-
-attracties_te_plannen = nieuwe_lijst
-for nieuwe in samengevoegde_attracties:
+    if nieuwe not in attracties_te_plannen:
+        attracties_te_plannen.append(nieuwe)
     aantallen_raw[nieuwe] = 1
+
+
+# -----------------------------
+# Actieve attracties per uur (ivm samenvoegingen)
+# -----------------------------
+
+actieve_attracties_per_uur = {}
+
+for uur in open_uren:
+    actief = set(attracties_te_plannen)
+
+    for groep in uur_samenvoegingen.get(uur, []):
+        nieuwe = " + ".join(groep)
+        # losse attracties verdwijnen
+        for a in groep:
+            actief.discard(a)
+        # samengevoegde verschijnt
+        actief.add(nieuwe)
+
+    actieve_attracties_per_uur[uur] = actief
+
 
 
 # -----------------------------
@@ -279,7 +279,10 @@ for uur in open_uren:
         )
     )
     # Hoeveel attracties minimaal bemand moeten worden
-    base_spots = sum(1 for a in attracties_te_plannen if aantallen_raw[a] >= 1)
+    base_spots = sum(
+    1 for a in actieve_attracties_per_uur[uur]
+    if aantallen_raw.get(a, 0) >= 1
+)
     extra_spots = student_count - base_spots
 
     # Allocate 2e plekken volgens prioriteit
@@ -321,7 +324,7 @@ studenten_sorted = sorted(studenten_workend, key=lambda s: s["aantal_attracties"
 # -----------------------------
 positions_per_hour = {uur: [] for uur in open_uren}
 for uur in open_uren:
-    for attr in attracties_te_plannen:
+    for attr in actieve_attracties_per_uur[uur]:
         max_pos = aantallen[uur].get(attr, 1)
         for pos in range(1, max_pos+1):
             # sla rode posities over
@@ -409,7 +412,10 @@ def _try_place_block_on_attr(student, block_hours, attr):
 def _try_place_block_any_attr(student, block_hours):
     """Probeer dit blok te plaatsen op eender welke attractie die student kan."""
     # Eerst attracties die nu het minst keuze hebben (kritiek), zodat we schaarste slim benutten
-    candidate_attrs = [a for a in attracties_te_plannen if a in student["attracties"]]
+    candidate_attrs = [
+    a for a in attracties_te_plannen
+    if student_kan_attr(student, a)
+]
     candidate_attrs.sort(key=lambda a: sum(1 for s in studenten_workend if a in s["attracties"]))
     for attr in candidate_attrs:
         # vermijd dubbele toewijzing van hetzelfde attr als het niet per se moet
@@ -550,7 +556,7 @@ max_iterations = 5
 for _ in range(max_iterations):
     changes_made = False
     for uur in open_uren:
-        for attr in attracties_te_plannen:
+        for attr in actieve_attracties_per_uur[uur]:
             max_pos = aantallen[uur].get(attr, 1)
             if attr in red_spots.get(uur, set()):
                 max_pos = 1
@@ -646,7 +652,7 @@ for col_idx, uur in enumerate(sorted(open_uren), start=2):
     ws_out.cell(1, col_idx).border = thin_border
 
 rij_out = 2
-for attr in attracties_te_plannen:
+for attr in actieve_attracties_per_uur[uur]:
     # FIX: correcte berekening max_pos
     max_pos = max(
         max(aantallen[uur].get(attr, 1) for uur in open_uren),
