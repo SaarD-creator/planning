@@ -262,6 +262,23 @@ for uur in open_uren:
 
     actieve_attracties_per_uur[uur] = actief
 
+for uur in open_uren:
+    samengroepen = uur_samenvoegingen.get(uur, [])
+
+    # alle samengestelde attracties
+    samengestelde = {" + ".join(g) for g in samengroepen}
+
+    # alle losse attracties die in een samengroep zitten
+    losse_in_samenvoeging = {a for g in samengroepen for a in g}
+
+    # 1️⃣ Als samengestelde actief is → losse attracties verbieden
+    for attr in losse_in_samenvoeging:
+        red_spots[uur].add(attr)
+
+    # 2️⃣ Als samengestelde NIET actief is → samengestelde verbieden
+    for sameng in samengevoegde_attracties:
+        if sameng not in samengestelde:
+            red_spots[uur].add(sameng)
 
 
 # -----------------------------
@@ -388,7 +405,10 @@ def _max_spots_for(attr, uur):
     return max_spots
 
 def _has_capacity(attr, uur):
+    if attr in red_spots.get(uur, set()):
+        return False
     return per_hour_assigned_counts[uur][attr] < _max_spots_for(attr, uur)
+
 
 def _try_place_block_on_attr(student, block_hours, attr):
     """Check capaciteit in alle uren en plaats dan in één keer, met max 4 uur per attractie per dag (positie 1 en 2 tellen samen)."""
