@@ -273,7 +273,8 @@ for uur in open_uren:
 # Compute aantallen per hour + red spots
 # -----------------------------
 aantallen = {uur: {a: 1 for a in attracties_te_plannen} for uur in open_uren}
-red_spots = {uur: set() for uur in open_uren}
+red_spots = {uur: set() for uur in open_uren}          # attractie volledig verboden
+second_spot_blocked = {uur: set() for uur in open_uren}  # alleen plek 2 verboden
 
 for uur in open_uren:
     # Hoeveel studenten beschikbaar dit uur (excl. pauzevlinders op duty)
@@ -297,7 +298,8 @@ for uur in open_uren:
                 aantallen[uur][attr] = 2
                 extra_spots -= 1
             else:
-                red_spots[uur].add(attr)
+                second_spot_blocked[uur].add(attr)
+
 
 
 # -----------------------------
@@ -358,7 +360,7 @@ for uur in open_uren:
         max_pos = aantallen[uur].get(attr, 1)
         for pos in range(1, max_pos+1):
             # sla rode posities over
-            if attr in red_spots[uur] and pos == 2:
+            if attr in second_spot_blocked[uur] and pos == 2:
                 continue
             positions_per_hour[uur].append((attr, pos))
 
@@ -413,7 +415,7 @@ def student_kan_attr(student, attr):
 def _max_spots_for(attr, uur):
     """Houd rekening met red_spots: 2e plek dicht als het rood is."""
     max_spots = aantallen[uur].get(attr, 1)
-    if attr in red_spots.get(uur, set()):
+    if attr in second_spot_blocked.get(uur, set()):
         max_spots = 1
     return max_spots
 
@@ -708,7 +710,7 @@ for attr in actieve_attracties_per_uur[uur]:
 
         for col_idx, uur in enumerate(sorted(open_uren), start=2):
             # Red spots nu wit maken
-            if attr in red_spots.get(uur, set()) and pos_idx == 2:
+            if attr in second_spot_blocked.get(uur, set()) and pos_idx == 2:
                 ws_out.cell(rij_out, col_idx, "").fill = white_fill
                 ws_out.cell(rij_out, col_idx).border = thin_border
             else:
