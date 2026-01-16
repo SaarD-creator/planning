@@ -373,6 +373,13 @@ def place_block(student, block_hours, attr):
 # FLEXIBELE BLOKKEN & PLAATSLOGICA
 # =============================
 
+def student_kan_attr(student, attr):
+    if " + " not in attr:
+        return attr in student["attracties"]
+
+    onderdelen = [a.strip() for a in attr.split("+")]
+    return all(o in student["attracties"] for o in onderdelen)
+
 def _max_spots_for(attr, uur):
     """Houd rekening met red_spots: 2e plek dicht als het rood is."""
     max_spots = aantallen[uur].get(attr, 1)
