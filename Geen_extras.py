@@ -356,7 +356,6 @@ for uur in open_uren:
 studenten_workend = [
     s for s in studenten
     if any(u in open_uren for u in s["uren_beschikbaar"])
-    and not s.get("vaste_attractie")
 ]
 
 
@@ -575,6 +574,11 @@ def assign_student(s):
     - Eerst lange blokken proberen (3 uur), dan korter (2 of 1).
     - Blokken die niet passen, gaan voorlopig naar extra_assignments.
     """
+
+    # Studenten met vaste attractie zijn al volledig ingepland
+    if s.get("vaste_attractie"):
+        return
+
     # Filter op effectieve inzetbare uren
     uren = sorted(u for u in s["uren_beschikbaar"] if u in open_uren)
     if s["is_pauzevlinder"]:
@@ -594,10 +598,6 @@ def assign_student(s):
         for h in unplaced:
             extra_assignments[h].append(s["naam"])
 
-
-
-for s in studenten_sorted:
-    assign_student(s)
 
 # -----------------------------
 # Post-processing: lege plekken opvullen door doorschuiven
