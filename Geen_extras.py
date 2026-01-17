@@ -761,9 +761,16 @@ for col_idx, uur in enumerate(sorted(open_uren), start=2):
     ws_out.cell(1, col_idx).alignment = center_align
     ws_out.cell(1, col_idx).border = thin_border
 
+
 rij_out = 2
-for attr in actieve_attracties_per_uur[uur]:
-    # FIX: correcte berekening max_pos
+
+alle_attracties = sorted({
+    attr
+    for uur in open_uren
+    for attr in actieve_attracties_per_uur[uur]
+})
+
+for attr in alle_attracties:
     max_pos = max(
         max(aantallen[uur].get(attr, 1) for uur in open_uren),
         max(per_hour_assigned_counts[uur].get(attr, 0) for uur in open_uren)
@@ -775,21 +782,23 @@ for attr in actieve_attracties_per_uur[uur]:
         ws_out.cell(rij_out, 1).fill = white_fill
         ws_out.cell(rij_out, 1).border = thin_border
 
-
         for col_idx, uur in enumerate(sorted(open_uren), start=2):
-            # Red spots nu wit maken
             if attr in second_spot_blocked.get(uur, set()) and pos_idx == 2:
                 ws_out.cell(rij_out, col_idx, "").fill = white_fill
-                ws_out.cell(rij_out, col_idx).border = thin_border
             else:
                 namen = assigned_map.get((uur, attr), [])
                 naam = namen[pos_idx - 1] if pos_idx - 1 < len(namen) else ""
                 ws_out.cell(rij_out, col_idx, naam).alignment = center_align
-                ws_out.cell(rij_out, col_idx).border = thin_border
-                if naam and naam in student_kleuren:
-                    ws_out.cell(rij_out, col_idx).fill = PatternFill(start_color=student_kleuren[naam], fill_type="solid")
+                if naam in student_kleuren:
+                    ws_out.cell(rij_out, col_idx).fill = PatternFill(
+                        start_color=student_kleuren[naam],
+                        fill_type="solid"
+                    )
+
+            ws_out.cell(rij_out, col_idx).border = thin_border
 
         rij_out += 1
+
 
 # Pauzevlinders
 rij_out += 1
