@@ -1,4 +1,4 @@
-#samenvoegen attracties voor hele dag werkt al!
+#samenvoegen attracties per uur werkttttt!!!
 
 
 import streamlit as st
@@ -124,30 +124,6 @@ for rij in range(2,500):
         "assigned_attracties":set(),
         "assigned_hours":[]
     })
-
-
-# -----------------------------
-# Vaste attracties per student (BG5:BI26)
-# -----------------------------
-vaste_attracties = {}
-
-for rij in range(5, 27):  # BG5 t/m BI26
-    checkbox = ws[f"BG{rij}"].value
-    naam = ws[f"BH{rij}"].value
-    attractie = ws[f"BI{rij}"].value
-
-    if checkbox in [1, True, "WAAR", "X"] and naam and attractie:
-        vaste_attracties[str(naam).strip()] = str(attractie).strip()
-
-
-# Markeer studenten met vaste attractie
-for s in studenten:
-    vaste = vaste_attracties.get(s["naam"])
-    if vaste:
-        s["vaste_attractie"] = vaste
-    else:
-        s["vaste_attractie"] = None
-
 
 
 # -----------------------------
@@ -354,10 +330,8 @@ for uur in open_uren:
 # Studenten die effectief inzetbaar zijn
 # -----------------------------
 studenten_workend = [
-    s for s in studenten
-    if any(u in open_uren for u in s["uren_beschikbaar"])
+    s for s in studenten if any(u in open_uren for u in s["uren_beschikbaar"])
 ]
-
 
 # Sorteer attracties op "kritieke score" (hoeveel studenten ze kunnen doen)
 def kritieke_score(attr, studenten_list):
@@ -371,47 +345,6 @@ attracties_te_plannen.sort(key=lambda a: kritieke_score(a, studenten_workend))
 assigned_map = defaultdict(list)  # (uur, attr) -> list of student-names
 per_hour_assigned_counts = {uur: {a: 0 for a in attracties_te_plannen} for uur in open_uren}
 extra_assignments = defaultdict(list)
-
-
-# -----------------------------
-# Vooraf plaatsen van vaste attracties
-# -----------------------------
-for s in studenten:
-    vaste_attr = s.get("vaste_attractie")
-    if not vaste_attr:
-        continue
-
-    # Alleen uren waarop student echt werkt
-    vaste_uren = [
-        u for u in s["uren_beschikbaar"]
-        if u in open_uren and not (
-            s["is_pauzevlinder"] and u in required_pauze_hours
-        )
-    ]
-
-    for uur in vaste_uren:
-        # Check of attractie dit uur actief is
-        if vaste_attr not in actieve_attracties_per_uur.get(uur, set()):
-            continue
-
-        # Respecteer red spots
-        if vaste_attr in red_spots.get(uur, set()):
-            continue
-
-        max_pos = aantallen[uur].get(vaste_attr, 1)
-        if vaste_attr in second_spot_blocked.get(uur, set()):
-            max_pos = 1
-
-        # Is er nog plek?
-        if per_hour_assigned_counts[uur][vaste_attr] >= max_pos:
-            continue
-
-        # Plaats student
-        assigned_map[(uur, vaste_attr)].append(s["naam"])
-        per_hour_assigned_counts[uur][vaste_attr] += 1
-        s["assigned_hours"].append(uur)
-        s["assigned_attracties"].add(vaste_attr)
-
 
 MAX_CONSEC = 4
 MAX_PER_STUDENT_ATTR = 6
@@ -574,11 +507,6 @@ def assign_student(s):
     - Eerst lange blokken proberen (3 uur), dan korter (2 of 1).
     - Blokken die niet passen, gaan voorlopig naar extra_assignments.
     """
-
-    # Studenten met vaste attractie zijn al volledig ingepland
-    if s.get("vaste_attractie"):
-        return
-
     # Filter op effectieve inzetbare uren
     uren = sorted(u for u in s["uren_beschikbaar"] if u in open_uren)
     if s["is_pauzevlinder"]:
@@ -598,6 +526,10 @@ def assign_student(s):
         for h in unplaced:
             extra_assignments[h].append(s["naam"])
 
+
+
+for s in studenten_sorted:
+    assign_student(s)
 
 # -----------------------------
 # Post-processing: lege plekken opvullen door doorschuiven
@@ -761,16 +693,9 @@ for col_idx, uur in enumerate(sorted(open_uren), start=2):
     ws_out.cell(1, col_idx).alignment = center_align
     ws_out.cell(1, col_idx).border = thin_border
 
-
 rij_out = 2
-
-alle_attracties = sorted({
-    attr
-    for uur in open_uren
-    for attr in actieve_attracties_per_uur[uur]
-})
-
-for attr in alle_attracties:
+for attr in actieve_attracties_per_uur[uur]:
+    # FIX: correcte berekening max_pos
     max_pos = max(
         max(aantallen[uur].get(attr, 1) for uur in open_uren),
         max(per_hour_assigned_counts[uur].get(attr, 0) for uur in open_uren)
@@ -782,23 +707,21 @@ for attr in alle_attracties:
         ws_out.cell(rij_out, 1).fill = white_fill
         ws_out.cell(rij_out, 1).border = thin_border
 
+
         for col_idx, uur in enumerate(sorted(open_uren), start=2):
+            # Red spots nu wit maken
             if attr in second_spot_blocked.get(uur, set()) and pos_idx == 2:
                 ws_out.cell(rij_out, col_idx, "").fill = white_fill
+                ws_out.cell(rij_out, col_idx).border = thin_border
             else:
                 namen = assigned_map.get((uur, attr), [])
                 naam = namen[pos_idx - 1] if pos_idx - 1 < len(namen) else ""
                 ws_out.cell(rij_out, col_idx, naam).alignment = center_align
-                if naam in student_kleuren:
-                    ws_out.cell(rij_out, col_idx).fill = PatternFill(
-                        start_color=student_kleuren[naam],
-                        fill_type="solid"
-                    )
-
-            ws_out.cell(rij_out, col_idx).border = thin_border
+                ws_out.cell(rij_out, col_idx).border = thin_border
+                if naam and naam in student_kleuren:
+                    ws_out.cell(rij_out, col_idx).fill = PatternFill(start_color=student_kleuren[naam], fill_type="solid")
 
         rij_out += 1
-
 
 # Pauzevlinders
 rij_out += 1
