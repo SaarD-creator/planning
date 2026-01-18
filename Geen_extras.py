@@ -173,6 +173,19 @@ for groepen in uur_samenvoegingen.values():
 
 
 # -----------------------------
+# Voeg samengestelde attracties toe aan individuele studenten
+# -----------------------------
+for s in studenten:
+    huidige = set(s["attracties"])
+    for sameng in samengevoegde_attracties:
+        onderdelen = [a.strip() for a in sameng.split("+")]
+        if all(o in huidige for o in onderdelen):
+            s["attracties"].append(sameng)  # voeg de samengestelde attractie toe
+
+
+
+
+# -----------------------------
 # Openingsuren
 # -----------------------------
 open_uren=[int(str(ws.cell(1,kol).value).replace("u","").strip()) for kol in range(36,45) if ws.cell(2,kol).value in [1,True,"WAAR","X"]]
