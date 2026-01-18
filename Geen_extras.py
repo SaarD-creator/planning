@@ -339,8 +339,6 @@ def kritieke_score(attr, studenten_list):
 
 attracties_te_plannen.sort(key=lambda a: kritieke_score(a, studenten_workend))
 
-
-
 # -----------------------------
 # Assign per student
 # -----------------------------
@@ -351,71 +349,7 @@ extra_assignments = defaultdict(list)
 MAX_CONSEC = 4
 MAX_PER_STUDENT_ATTR = 6
 
-
-# -----------------------------
-# Vaste dag-attracties (BG–BI)
-# -----------------------------
-
-vaste_plaatsingen = []  # lijst van dicts: {naam, attractie}
-
-for rij in range(5, 27):  # BG5 t.e.m. BI26
-    if ws[f"BG{rij}"].value in [1, True, "WAAR", "X"]:
-        naam = ws[f"BH{rij}"].value
-        attractie = ws[f"BI{rij}"].value
-        if naam and attractie:
-            vaste_plaatsingen.append({
-                "naam": str(naam).strip(),
-                "attractie": str(attractie).strip()
-            })
-
-
-# -----------------------------
-# Vaste plaatsingen toepassen
-# -----------------------------
-
-for vp in vaste_plaatsingen:
-    student = next((s for s in studenten if s["naam"] == vp["naam"]), None)
-    if not student:
-        continue
-
-    attr = vp["attractie"]
-
-    # effectieve werkuren van deze student
-    uren = [
-        u for u in student["uren_beschikbaar"]
-        if u in open_uren
-        and not (student["is_pauzevlinder"] and u in required_pauze_hours)
-    ]
-
-    for uur in uren:
-        # attractie moet dit uur actief zijn
-        if attr not in actieve_attracties_per_uur.get(uur, set()):
-            continue
-
-        # rode attracties overslaan
-        if attr in red_spots.get(uur, set()):
-            continue
-
-        # capaciteit check
-        max_spots = aantallen[uur].get(attr, 1)
-        if attr in second_spot_blocked.get(uur, set()):
-            max_spots = 1
-
-        if per_hour_assigned_counts[uur][attr] >= max_spots:
-            continue
-
-        # plaats student
-        assigned_map[(uur, attr)].append(student["naam"])
-        per_hour_assigned_counts[uur][attr] += 1
-        student["assigned_hours"].append(uur)
-        student["assigned_attracties"].add(attr)
-
-    # student mag niet meer door de normale planner
-    student["uren_beschikbaar"] = []
-
-
 studenten_sorted = sorted(studenten_workend, key=lambda s: s["aantal_attracties"])
-
 
 # -----------------------------
 # Voorbereiden: expand naar posities per uur
