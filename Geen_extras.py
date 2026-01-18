@@ -843,6 +843,10 @@ for row in ws_out.iter_rows(min_row=2, values_only=True):
 
 
 
+bezet_per_uur = {
+    uur: set(occupied_positions[uur].values())
+    for uur in open_uren
+}
 
 
 
