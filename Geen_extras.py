@@ -347,6 +347,24 @@ studenten_workend = [
     s for s in studenten if any(u in open_uren for u in s["uren_beschikbaar"])
 ]
 
+
+# -----------------------------
+# Blacklist van attracties per student (BB16:BG79)
+# -----------------------------
+student_blacklist = defaultdict(set)
+
+for rij in range(16, 80):  # BB16 t/m BG79
+    naam = ws[f'BB{rij}'].value
+    if not naam:
+        continue
+    naam = str(naam).strip()
+    # attracties in BC t/m BG
+    for col in range(54, 60):  # BC=54, BD=55, ..., BG=59
+        attr = ws.cell(rij, col).value
+        if attr:
+            student_blacklist[naam].add(str(attr).strip().lower())
+
+
 # Sorteer attracties op "kritieke score" (hoeveel studenten ze kunnen doen)
 def kritieke_score(attr, studenten_list):
     return sum(1 for s in studenten_list if attr in s["attracties"])
@@ -372,7 +390,7 @@ MAX_PER_STUDENT_ATTR = 6
 
 vaste_plaatsingen = []  # lijst van dicts: {naam, attractie}
 
-for rij in range(5, 27):  # BG5 t.e.m. BI26
+for rij in range(5, 9):  # BG5 t.e.m. BI26
     if ws[f"BG{rij}"].value in [1, True, "WAAR", "X"]:
         naam = ws[f"BH{rij}"].value
         attractie = ws[f"BI{rij}"].value
@@ -490,10 +508,17 @@ def place_block(student, block_hours, attr):
 
 def student_kan_attr(student, attr):
     if " + " not in attr:
+        # check blacklist
+        if attr.lower() in student_blacklist.get(student["naam"], set()):
+            return False
         return attr in student["attracties"]
-
     onderdelen = [a.strip() for a in attr.split("+")]
+    # check elk onderdeel tegen blacklist
+    for o in onderdelen:
+        if o.lower() in student_blacklist.get(student["naam"], set()):
+            return False
     return all(o in student["attracties"] for o in onderdelen)
+
 
 def _max_spots_for(attr, uur):
     """Houd rekening met red_spots: 2e plek dicht als het rood is."""
