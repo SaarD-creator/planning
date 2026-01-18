@@ -27,7 +27,7 @@ if not uploaded_file:
 
 wb = load_workbook(BytesIO(uploaded_file.read()), data_only=True)
 
-ws = wb["Blad1"]
+ws = wb["Input"]
 
 # -----------------------------
 
