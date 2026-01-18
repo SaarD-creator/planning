@@ -1,4 +1,5 @@
 #samenvoegen attracties per uur werkttttt!!!
+#hele dag bij attractie werkt bijna (enkel de extra's nog niet)
 
 
 import streamlit as st
@@ -339,6 +340,8 @@ def kritieke_score(attr, studenten_list):
 
 attracties_te_plannen.sort(key=lambda a: kritieke_score(a, studenten_workend))
 
+
+
 # -----------------------------
 # Assign per student
 # -----------------------------
@@ -349,7 +352,71 @@ extra_assignments = defaultdict(list)
 MAX_CONSEC = 4
 MAX_PER_STUDENT_ATTR = 6
 
+
+# -----------------------------
+# Vaste dag-attracties (BG–BI)
+# -----------------------------
+
+vaste_plaatsingen = []  # lijst van dicts: {naam, attractie}
+
+for rij in range(5, 27):  # BG5 t.e.m. BI26
+    if ws[f"BG{rij}"].value in [1, True, "WAAR", "X"]:
+        naam = ws[f"BH{rij}"].value
+        attractie = ws[f"BI{rij}"].value
+        if naam and attractie:
+            vaste_plaatsingen.append({
+                "naam": str(naam).strip(),
+                "attractie": str(attractie).strip()
+            })
+
+
+# -----------------------------
+# Vaste plaatsingen toepassen
+# -----------------------------
+
+for vp in vaste_plaatsingen:
+    student = next((s for s in studenten if s["naam"] == vp["naam"]), None)
+    if not student:
+        continue
+
+    attr = vp["attractie"]
+
+    # effectieve werkuren van deze student
+    uren = [
+        u for u in student["uren_beschikbaar"]
+        if u in open_uren
+        and not (student["is_pauzevlinder"] and u in required_pauze_hours)
+    ]
+
+    for uur in uren:
+        # attractie moet dit uur actief zijn
+        if attr not in actieve_attracties_per_uur.get(uur, set()):
+            continue
+
+        # rode attracties overslaan
+        if attr in red_spots.get(uur, set()):
+            continue
+
+        # capaciteit check
+        max_spots = aantallen[uur].get(attr, 1)
+        if attr in second_spot_blocked.get(uur, set()):
+            max_spots = 1
+
+        if per_hour_assigned_counts[uur][attr] >= max_spots:
+            continue
+
+        # plaats student
+        assigned_map[(uur, attr)].append(student["naam"])
+        per_hour_assigned_counts[uur][attr] += 1
+        student["assigned_hours"].append(uur)
+        student["assigned_attracties"].add(attr)
+
+    # student mag niet meer door de normale planner
+    student["uren_beschikbaar"] = []
+
+
 studenten_sorted = sorted(studenten_workend, key=lambda s: s["aantal_attracties"])
+
 
 # -----------------------------
 # Voorbereiden: expand naar posities per uur
@@ -363,11 +430,14 @@ for uur in open_uren:
             if attr in second_spot_blocked[uur] and pos == 2:
                 continue
             positions_per_hour[uur].append((attr, pos))
+# -----------------------------
+# occupied_positions vullen op basis van bestaande assigned_map
+# -----------------------------
+occupied_positions = {uur: {} for uur in open_uren}
 
-# Mapping: welke student staat waar
-assigned_map = defaultdict(list)  # (uur, attr) -> [namen]
-occupied_positions = {uur: {} for uur in open_uren}  # (attr,pos) -> naam
-extra_assignments = defaultdict(list)
+for (uur, attr), namen in assigned_map.items():
+    for idx, naam in enumerate(namen, start=1):
+        occupied_positions[uur][(attr, idx)] = naam
 
 
 # -----------------------------
@@ -1122,6 +1192,30 @@ for pv in selected:
     if row_found is not None:
         pv_rows.append((pv, row_found))
         pv_cap_set[pv["naam"]] = {normalize_attr(a) for a in pv.get("attracties", [])}
+
+
+# -----------------------------
+# DEEL 1.5: Samengevoegde attracties correct registreren
+# -----------------------------
+# Plaats dit nadat je de PV-capabilities hebt opgebouwd, bv. na:
+# pv_cap_set[pv["naam"]] = {normalize_attr(a) for a in pv.get("attracties", [])}
+
+for pv in selected:
+    nieuwe_caps = set()
+    for attr in pv.get("attracties", []):
+        attr_norm = normalize_attr(attr)
+        # Check: bevat '+' → samengevoegde attractie
+        if "+" in attr_norm:
+            # split en normaliseer elk onderdeel
+            onderdelen = [normalize_attr(x) for x in attr_norm.split("+")]
+            # als PV elk onderdeel kan, voeg samengevoegde attractie toe
+            if all(x in pv_cap_set[pv["naam"]] for x in onderdelen):
+                nieuwe_caps.add(attr_norm)  # hele samengestelde attractie toevoegen
+        else:
+            nieuwe_caps.add(attr_norm)
+    # overschrijf set met de uitgebreide mogelijkheden
+    pv_cap_set[pv["naam"]] = nieuwe_caps
+
 
 # Lange werkers: namen-set voor snelle checks
 
