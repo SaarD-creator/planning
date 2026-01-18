@@ -342,6 +342,34 @@ attracties_te_plannen.sort(key=lambda a: kritieke_score(a, studenten_workend))
 
 
 # -----------------------------
+# Assign per student
+# -----------------------------
+assigned_map = defaultdict(list)  # (uur, attr) -> list of student-names
+per_hour_assigned_counts = {uur: {a: 0 for a in attracties_te_plannen} for uur in open_uren}
+extra_assignments = defaultdict(list)
+
+MAX_CONSEC = 4
+MAX_PER_STUDENT_ATTR = 6
+
+
+# -----------------------------
+# Vaste dag-attracties (BG–BI)
+# -----------------------------
+
+vaste_plaatsingen = []  # lijst van dicts: {naam, attractie}
+
+for rij in range(5, 27):  # BG5 t.e.m. BI26
+    if ws[f"BG{rij}"].value in [1, True, "WAAR", "X"]:
+        naam = ws[f"BH{rij}"].value
+        attractie = ws[f"BI{rij}"].value
+        if naam and attractie:
+            vaste_plaatsingen.append({
+                "naam": str(naam).strip(),
+                "attractie": str(attractie).strip()
+            })
+
+
+# -----------------------------
 # Vaste plaatsingen toepassen
 # -----------------------------
 
@@ -384,34 +412,6 @@ for vp in vaste_plaatsingen:
 
     # student mag niet meer door de normale planner
     student["uren_beschikbaar"] = []
-
-
-# -----------------------------
-# Assign per student
-# -----------------------------
-assigned_map = defaultdict(list)  # (uur, attr) -> list of student-names
-per_hour_assigned_counts = {uur: {a: 0 for a in attracties_te_plannen} for uur in open_uren}
-extra_assignments = defaultdict(list)
-
-MAX_CONSEC = 4
-MAX_PER_STUDENT_ATTR = 6
-
-
-# -----------------------------
-# Vaste dag-attracties (BG–BI)
-# -----------------------------
-
-vaste_plaatsingen = []  # lijst van dicts: {naam, attractie}
-
-for rij in range(5, 27):  # BG5 t.e.m. BI26
-    if ws[f"BG{rij}"].value in [1, True, "WAAR", "X"]:
-        naam = ws[f"BH{rij}"].value
-        attractie = ws[f"BI{rij}"].value
-        if naam and attractie:
-            vaste_plaatsingen.append({
-                "naam": str(naam).strip(),
-                "attractie": str(attractie).strip()
-            })
 
 
 studenten_sorted = sorted(studenten_workend, key=lambda s: s["aantal_attracties"])
