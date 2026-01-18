@@ -127,23 +127,6 @@ for rij in range(2,500):
 
 
 # -----------------------------
-# Vaste dag-attracties (BG–BI)
-# -----------------------------
-
-vaste_plaatsingen = []  # lijst van dicts: {naam, attractie}
-
-for rij in range(5, 27):  # BG5 t.e.m. BI26
-    if ws[f"BG{rij}"].value in [1, True, "WAAR", "X"]:
-        naam = ws[f"BH{rij}"].value
-        attractie = ws[f"BI{rij}"].value
-        if naam and attractie:
-            vaste_plaatsingen.append({
-                "naam": str(naam).strip(),
-                "attractie": str(attractie).strip()
-            })
-
-
-# -----------------------------
 # Samenvoeg-attracties (per uur)
 # -----------------------------
 
@@ -413,7 +396,26 @@ extra_assignments = defaultdict(list)
 MAX_CONSEC = 4
 MAX_PER_STUDENT_ATTR = 6
 
+
+# -----------------------------
+# Vaste dag-attracties (BG–BI)
+# -----------------------------
+
+vaste_plaatsingen = []  # lijst van dicts: {naam, attractie}
+
+for rij in range(5, 27):  # BG5 t.e.m. BI26
+    if ws[f"BG{rij}"].value in [1, True, "WAAR", "X"]:
+        naam = ws[f"BH{rij}"].value
+        attractie = ws[f"BI{rij}"].value
+        if naam and attractie:
+            vaste_plaatsingen.append({
+                "naam": str(naam).strip(),
+                "attractie": str(attractie).strip()
+            })
+
+
 studenten_sorted = sorted(studenten_workend, key=lambda s: s["aantal_attracties"])
+
 
 # -----------------------------
 # Voorbereiden: expand naar posities per uur
