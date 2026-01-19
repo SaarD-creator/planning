@@ -733,6 +733,17 @@ for _ in range(max_iterations):
         break
 
 
+# -----------------------------
+# Alle attracties die minstens één keer actief zijn (voor output)
+# -----------------------------
+alle_actieve_attracties = set()
+for uur in open_uren:
+    alle_actieve_attracties |= actieve_attracties_per_uur.get(uur, set())
+
+alle_actieve_attracties = sorted(alle_actieve_attracties)
+
+
+    
 
 # -----------------------------
 
@@ -802,7 +813,7 @@ for col_idx, uur in enumerate(sorted(open_uren), start=2):
     ws_out.cell(1, col_idx).border = thin_border
 
 rij_out = 2
-for attr in actieve_attracties_per_uur[uur]:
+for attr in alle_actieve_attracties:
     # FIX: correcte berekening max_pos
     max_pos = max(
         max(aantallen[uur].get(attr, 1) for uur in open_uren),
