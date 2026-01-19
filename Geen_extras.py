@@ -283,37 +283,39 @@ for uur in open_uren:
 
 
 
-
 # -----------------------------
-# Compute aantallen per hour + red spots
+# Compute aantallen per uur (correct bij samenvoegingen)
 # -----------------------------
-aantallen = {uur: {a: 1 for a in attracties_te_plannen} for uur in open_uren}
-red_spots = {uur: set() for uur in open_uren}          # attractie volledig verboden
-second_spot_blocked = {uur: set() for uur in open_uren}  # alleen plek 2 verboden
+aantallen = {uur: {} for uur in open_uren}
+red_spots = {uur: set() for uur in open_uren}
+second_spot_blocked = {uur: set() for uur in open_uren}
 
 for uur in open_uren:
-    # Hoeveel studenten beschikbaar dit uur (excl. pauzevlinders op duty)
+    # Beschikbare studenten dit uur
     student_count = sum(
         1 for s in studenten
-        if uur in s["uren_beschikbaar"] and not (
-            s["is_pauzevlinder"] and uur in required_pauze_hours
-        )
+        if uur in s["uren_beschikbaar"]
+        and not (s["is_pauzevlinder"] and uur in required_pauze_hours)
     )
-    # Hoeveel attracties minimaal bemand moeten worden
-    base_spots = sum(
-    1 for a in actieve_attracties_per_uur[uur]
-    if aantallen_raw.get(a, 0) >= 1
-)
-    extra_spots = student_count - base_spots
 
-    # Allocate 2e plekken volgens prioriteit
+    actieve_attrs = actieve_attracties_per_uur[uur]
+
+    # Elke actieve attractie heeft altijd minstens 1 plek
+    for attr in actieve_attrs:
+        aantallen[uur][attr] = 1
+
+    verplichte_plekken = len(actieve_attrs)
+    extra_spots = max(0, student_count - verplichte_plekken)
+
+    # Tweede plekken toewijzen volgens prioriteit
     for attr in second_priority_order:
-        if attr in aantallen_raw and aantallen_raw[attr] == 2:
-            if extra_spots > 0:
-                aantallen[uur][attr] = 2
-                extra_spots -= 1
-            else:
-                second_spot_blocked[uur].add(attr)
+        if attr not in actieve_attrs:
+            continue
+        if extra_spots > 0:
+            aantallen[uur][attr] = 2
+            extra_spots -= 1
+        else:
+            second_spot_blocked[uur].add(attr)
 
 
 
