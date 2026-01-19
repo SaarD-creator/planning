@@ -1,6 +1,6 @@
 #samenvoegen attracties per uur werkttttt!!! Kleine bug is er uit gehaald
 #hele dag bij attractie werkt
-# probleem met tweede plekken
+# probleem met twee
 
 
 import streamlit as st
@@ -299,19 +299,11 @@ for uur in open_uren:
             s["is_pauzevlinder"] and uur in required_pauze_hours
         )
     )
-
-    # Hoeveel attracties minimaal bemand moeten worden (met samenvoeg-correctie)
-    base_spots = 0
-
-    # 1. Tel alle actieve attracties
-    for a in actieve_attracties_per_uur[uur]:
-        if aantallen_raw.get(a, 0) >= 1:
-            base_spots += 1
-
-    # 2. Corrigeer voor samenvoegingen in dit uur
-    for groep in uur_samenvoegingen.get(uur, []):
-        base_spots -= (len(groep) - 1)
-
+    # Hoeveel attracties minimaal bemand moeten worden
+    base_spots = sum(
+    1 for a in actieve_attracties_per_uur[uur]
+    if aantallen_raw.get(a, 0) >= 1
+)
     extra_spots = student_count - base_spots
 
     # Allocate 2e plekken volgens prioriteit
