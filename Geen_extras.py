@@ -1063,6 +1063,22 @@ num_runs = 20  # Verhoogd voor een eerlijkere verdeling bij meerdere simulaties
 # Definieer de doelgroep: wie MOET pauze krijgen? (minstens 4 uur werken)
 doelgroep = [s["naam"] for s in studenten if student_totalen.get(s["naam"], 0) >= 4]
 
+def get_student_work_hours(naam):
+    """Welke uren werkt deze student echt (zoals te zien in werkblad 'Planning')?"""
+    uren = set()
+    for col in range(2, ws_planning.max_column + 1):
+        header = ws_planning.cell(1, col).value
+        uur = parse_header_uur(header)
+        if uur is None:
+            continue
+        # check of student in deze kolom ergens staat
+        for row in range(2, ws_planning.max_row + 1):
+            if ws_planning.cell(row, col).value == naam:
+                uren.add(uur)
+                break
+    return sorted(uren)
+
+
 for _run in range(num_runs):
     # Maak een tijdelijke kopie van de pauze-sheet
     ws_pauze_tmp = wb_out.copy_worksheet(ws_pauze)
@@ -1300,20 +1316,6 @@ lange_werkers = [s for s in studenten
 ]
 lange_werkers_names = {s["naam"] for s in lange_werkers}
 
-def get_student_work_hours(naam):
-    """Welke uren werkt deze student echt (zoals te zien in werkblad 'Planning')?"""
-    uren = set()
-    for col in range(2, ws_planning.max_column + 1):
-        header = ws_planning.cell(1, col).value
-        uur = parse_header_uur(header)
-        if uur is None:
-            continue
-        # check of student in deze kolom ergens staat
-        for row in range(2, ws_planning.max_row + 1):
-            if ws_planning.cell(row, col).value == naam:
-                uren.add(uur)
-                break
-    return sorted(uren)
 
 def vind_attractie_op_uur(naam, uur):
     """Geef attractienaam (exact zoals in Planning-kolom A) waar student staat op dit uur; None als niet gevonden."""
