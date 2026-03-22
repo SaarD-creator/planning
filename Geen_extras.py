@@ -2465,129 +2465,14 @@ for _ in range(max_opt_passes):
 # --- Iteratieve optimalisatie: verdeel lange pauzes zo eerlijk mogelijk over pauzevlinders ---
 
 max_opt_passes_lange = 10
-
-# Helper: tel totale blokken (korte + lange pauzes) per pauzevlinder
-def _count_total_blocks(pv_naam):
-    """Tel alle pauze-blokken (korte en lange) voor een pauzevlinder"""
-    total = 0
-    for pv, pv_row in pv_rows:
-        if pv["naam"] != pv_naam:
-            continue
-        for idx, col in enumerate(pauze_cols):
-            cel = ws_pauze.cell(pv_row, col)
-            if cel.value:
-                # Tel dit blok
-                total += 1
-    return total
-
-# Helper: tel alleen lange pauze blokken per pauzevlinder
-def _count_long_blocks(pv_naam):
-    """Tel alleen blokken die deel uitmaken van een lange pauze"""
-    count = 0
-    for pv, pv_row in pv_rows:
-        if pv["naam"] != pv_naam:
-            continue
-        for idx, col in enumerate(pauze_cols[:-1]):
-            cel1 = ws_pauze.cell(pv_row, col)
-            cel2 = ws_pauze.cell(pv_row, pauze_cols[idx+1])
-            if cel1.value and cel1.value == cel2.value:
-                count += 2  # Een lange pauze = 2 blokken
-    return count // 2  # Elke lange pauze wordt 2x geteld, dus delen door 2 voor aantal lange pauzes
-
-# Helper: vind en verwijder een lange pauze van een pauzevlinder
-
-def _remove_long_pause(pv_naam):
-    """Verwijder een lange pauze van een pauzevlinder, retourneer (idx, col1, col2) of None"""
-    for pv, pv_row in pv_rows:
-        if pv["naam"] != pv_naam:
-            continue
-        for idx in range(len(pauze_cols)-1):
-            col1 = pauze_cols[idx]
-            col2 = pauze_cols[idx+1]
-            cel1 = ws_pauze.cell(pv_row, col1)
-            cel2 = ws_pauze.cell(pv_row, col2)
-            # Check of dit een lange pauze is (dezelfde naam in beide cellen)
-            if cel1.value and cel1.value == cel2.value:
-                # Verwijder de lange pauze
-                cel1.value = None
-                cel2.value = None
-                cel1.fill = naam_leeg_fill
-                cel2.fill = naam_leeg_fill
-                return (idx, col1, col2)
-    return None
-
-# Helper: probeer lange pauze te plaatsen bij een pauzevlinder
-
-def _try_place_long_pause(pv_naam, forbidden_idx=None):
-    """Probeer een lange pauze te plaatsen bij een pauzevlinder"""
-    for pv, pv_row in pv_rows:
-        if pv["naam"] != pv_naam:
-            continue
-        max_start_idx = min(10, len(pauze_cols)-2)
-        for idx in range(max_start_idx+1):
-            if forbidden_idx is not None and idx == forbidden_idx:
-                continue
-            col1 = pauze_cols[idx]
-            col2 = pauze_cols[idx+1]
-            # Check op heel of half uur
-            col1_header = ws_pauze.cell(1, col1).value
-            try:
-                min1 = int(str(col1_header).split('u')[1]) if 'u' in str(col1_header) and len(str(col1_header).split('u')) > 1 else 0
-            except:
-                min1 = 0
-            if min1 not in (0, 30):
-                continue
-            cel1 = ws_pauze.cell(pv_row, col1)
-            cel2 = ws_pauze.cell(pv_row, col2)
-            if cel1.value in [None, ""] and cel2.value in [None, ""]:
-                # Plaats lange pauze
-                cel1.value = pv_naam
-                cel2.value = pv_naam
-                cel1.fill = lichtgroen_fill
-                cel2.fill = lichtgroen_fill
-                cel1.alignment = center_align
-                cel2.alignment = center_align
-                cel1.border = thin_border
-                cel2.border = thin_border
-                return True
-    return False
-
+from collections import Counter
 for _ in range(max_opt_passes_lange):
-    # Bepaal huidige belasting per pauzevlinder
-    belasting = {}
-    for pv, _ in pv_rows:
-        belasting[pv["naam"]] = _count_total_blocks(pv["naam"])
-    
-    if not belasting:
-        break
-    
-    # Vind pauzevlinder met meeste en minste blokken
-    max_pv = max(belasting, key=belasting.get)
-    min_pv = min(belasting, key=belasting.get)
-    
-    # Als verschil kleiner dan 8 blokken (1 lange pauze), stop
-    if belasting[max_pv] - belasting[min_pv] <= 7:
-        break
-    
-    # Verwijder lange pauze van max_pv
-    removed = _remove_long_pause(max_pv)
-    if removed is None:
-        break  # Geen lange pauze meer te verplaatsen
-    
-    # Probeer lange pauze te plaatsen bij min_pv
-    placed = _try_place_long_pause(min_pv)
-    
-    if not placed:
-        # Plaats terug bij max_pv als het niet lukt bij min_pv
-        _try_place_long_pause(max_pv)
-        break
+    pass  # (oude optimalisatie-code is verwijderd, want niet meer nodig)
 
 # --- Pauzevlinders met >6u: altijd lange pauze in eigen rij ---
 import random
 # --- Pauzevlinders met >6u: altijd lange pauze in eigen rij, gespreid over eerste drie pauzeuren ---
-# FAIRNESS: sorteer pauzevlinders op wie het minst aan korte pauzes heeft
-pv_rows_sorted = sorted(pv_rows, key=lambda x: pv_korte_pauze_count.get(x[0]["naam"], 0))
-for pv, pv_row in pv_rows_sorted:
+for pv, pv_row in pv_rows:
     naam = pv["naam"]
     werk_uren = get_student_work_hours(naam)
     if len(werk_uren) > 6:
