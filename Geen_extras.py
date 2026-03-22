@@ -1055,7 +1055,7 @@ for row in ws_planning.iter_rows(min_row=2, values_only=True):
 import copy
 best_score = None
 best_state = None
-num_runs = 20
+num_runs = 5
 for _run in range(num_runs):
     # Maak een deep copy van de relevante werkbladen en variabelen
     ws_pauze_tmp = wb_out.copy_worksheet(ws_pauze)
@@ -1091,24 +1091,29 @@ for _run in range(num_runs):
                     korte_pauze_ontvangers.add(str(cel.value).strip())
     alle_studenten = [s["naam"] for s in studenten if student_totalen.get(s["naam"], 0) >= 4]
     iedereen_pauze = all(naam in korte_pauze_ontvangers for naam in alle_studenten)
-     # 2. Eerlijkheid: tel ALLE blokjes werk (kolommen)
+    # 2. Eerlijkheid: verschil max-min korte pauzes per pauzevlinder
     from collections import Counter
-    pv_werklast = Counter()
+    pv_korte_pauze_count = Counter()
     for pv, pv_row in pv_rows:
-        pv_naam = pv["naam"]
-        pv_werklast[pv_naam] = 0
         for col in pauze_cols:
             cel = ws_pauze_tmp.cell(pv_row, col)
             if cel.value and str(cel.value).strip() != "":
-                    # Pak de attractie boven de naam
-                attr_boven = ws_pauze_tmp.cell(pv_row - 1, col).value
-                    # Alleen tellen als het GEEN 'extra' is
-                if attr_boven and normalize_attr(attr_boven) != 'extra':
-                    pv_werklast[pv_naam] += 1
-        
-    if pv_werklast:
-            # Nu telt een lange pauze (2 cellen) als 2, en een korte als 1
-        eerlijkheid = max(pv_werklast.values()) - min(pv_werklast.values())
+                idx = pauze_cols.index(col)
+                is_lange = False
+                if idx+1 < len(pauze_cols):
+                    next_col = pauze_cols[idx+1]
+                    cel_next = ws_pauze_tmp.cell(pv_row, next_col)
+                    if cel_next.value == cel.value:
+                        is_lange = True
+                if idx > 0:
+                    prev_col = pauze_cols[idx-1]
+                    prev_cel = ws_pauze_tmp.cell(pv_row, prev_col)
+                    if prev_cel.value == cel.value:
+                        is_lange = True
+                if not is_lange:
+                    pv_korte_pauze_count[pv["naam"]] += 1
+    if pv_korte_pauze_count:
+        eerlijkheid = max(pv_korte_pauze_count.values()) - min(pv_korte_pauze_count.values())
     else:
         eerlijkheid = 999
     # Score: eerst iedereen_pauze, dan eerlijkheid
