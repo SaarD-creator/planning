@@ -2398,7 +2398,7 @@ for _ in range(max_wissel_passes):
         break  # geen verbetering meer mogelijk
 
 # Iteratieve optimalisatie: verschuif korte pauzes van "rijke" naar "arme" pauzevlinders
-max_opt_passes = 10
+max_opt_passes = 20
 for _ in range(max_opt_passes):
     # Zoek max en min aantal korte pauzes
     if not pv_korte_pauze_count:
