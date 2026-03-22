@@ -1055,7 +1055,7 @@ for row in ws_planning.iter_rows(min_row=2, values_only=True):
 import copy
 best_score = None
 best_state = None
-num_runs = 5
+num_runs = 30
 for _run in range(num_runs):
     # Maak een deep copy van de relevante werkbladen en variabelen
     ws_pauze_tmp = wb_out.copy_worksheet(ws_pauze)
