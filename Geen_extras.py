@@ -2462,89 +2462,60 @@ for _ in range(max_opt_passes):
 
 
 
-### --- VERBETERDE Iteratieve optimalisatie: verdeel lange pauzes over pauzevlinders ---
+# --- Iteratieve optimalisatie: verdeel lange pauzes zo eerlijk mogelijk over pauzevlinders ---
+
+max_opt_passes_lange = 10
 from collections import Counter
-
-# 1. Bereken de initiële werklast van lange pauzes (zonder 'Extra')
-pv_lange_count = Counter()
-for pv, pv_row in pv_rows:
-    pv_lange_count[pv["naam"]] = 0
-    idx = 0
-    while idx < len(pauze_cols) - 1:
-        col = pauze_cols[idx]
-        next_col = pauze_cols[idx+1]
-        cel = ws_pauze.cell(pv_row, col)
-        cel_next = ws_pauze.cell(pv_row, next_col)
-        
-        # Is dit een lange pauze (dubbel blok)?
-        if cel.value and cel.value == cel_next.value:
-            attr = ws_pauze.cell(pv_row-1, col).value
-            if attr and normalize_attr(attr) != 'extra':
-                pv_lange_count[pv["naam"]] += 1
-            idx += 2 # Spring over het tweede blokje
-        else:
-            idx += 1
-
-# 2. De optimalisatielus (vergelijkbaar met korte pauzes [2])
-max_opt_passes_lange = 15
 for _ in range(max_opt_passes_lange):
-    if not pv_lange_count: break
-    
-    # Wie is het drukste en wie het rustigste met lange pauzes?
-    max_pv_naam = max(pv_lange_count, key=lambda k: pv_lange_count[k])
-    min_pv_naam = min(pv_lange_count, key=lambda k: pv_lange_count[k])
-    
-    if pv_lange_count[max_pv_naam] - pv_lange_count[min_pv_naam] <= 1:
-        break # Verdeling is al optimaal
+    pass  # (oude optimalisatie-code is verwijderd, want niet meer nodig)
 
-    pv_row_max = next(row for pv, row in pv_rows if pv["naam"] == max_pv_naam)
-    pv_row_min = next(row for pv, row in pv_rows if pv["naam"] == min_pv_naam)
-    pv_min_obj = next(pv for pv, row in pv_rows if pv["naam"] == min_pv_naam)
+# --- Pauzevlinders met >6u: altijd lange pauze in eigen rij ---
+import random
+# --- Pauzevlinders met >6u: altijd lange pauze in eigen rij, gespreid over eerste drie pauzeuren ---
+for pv, pv_row in pv_rows:
+    naam = pv["naam"]
+    werk_uren = get_student_work_hours(naam)
+    if len(werk_uren) > 6:
+        # Alleen de eerste 11 kwartieren (indices 0 t/m 10) zijn toegestaan voor lange pauzes
+        if heeft_al_lange_pauze(naam):
+            continue
+        halve_uren = []  # lijst van (idx, col1, col2)
+        max_start_idx = min(10, len(pauze_cols)-2)  # idx 0 t/m 10 zijn halve uren binnen eerste 11 kwartieren
+        for idx in range(max_start_idx+1):
+            col1 = pauze_cols[idx]
+            col2 = pauze_cols[idx+1]
+            col1_header = ws_pauze.cell(1, col1).value
+            # Alleen starten op heel of half uur
+            try:
+                min1 = int(str(col1_header).split('u')[1]) if 'u' in str(col1_header) and len(str(col1_header).split('u')) > 1 else 0
+            except:
+                min1 = 0
+            if min1 not in (0, 30):
+                continue
+            cel1 = ws_pauze.cell(pv_row, col1)
+            cel2 = ws_pauze.cell(pv_row, col2)
+            if cel1.value in [None, ""] and cel2.value in [None, ""]:
+                halve_uren.append((idx, col1, col2))
+        # Shuffle de halve uren
+        random.shuffle(halve_uren)
+        # Probeer in geshuffelde volgorde een lange pauze te plaatsen
+        geplaatst = False
+        for idx, col1, col2 in halve_uren:
+            cel1 = ws_pauze.cell(pv_row, col1)
+            cel2 = ws_pauze.cell(pv_row, col2)
+            if cel1.value in [None, ""] and cel2.value in [None, ""] and not heeft_al_lange_pauze(naam):
+                cel1.value = naam
+                cel2.value = naam
+                cel1.alignment = center_align
+                cel2.alignment = center_align
+                cel1.border = thin_border
+                cel2.border = thin_border
+                cel1.fill = lichtgroen_fill
+                cel2.fill = lichtgroen_fill
+                geplaatst = True
+                break
+        # Indien geen plek gevonden, doe niets (komt zelden voor)
 
-    found_swap = False
-    idx = 0
-    while idx < len(pauze_cols) - 1:
-        col1 = pauze_cols[idx]
-        col2 = pauze_cols[idx+1]
-        
-        cel_max1 = ws_pauze.cell(pv_row_max, col1)
-        cel_max2 = ws_pauze.cell(pv_row_max, col2)
-        
-        # Zoek een lange pauze van de drukste PV
-        if cel_max1.value and cel_max1.value == cel_max2.value:
-            student_naam = cel_max1.value
-            attr1 = ws_pauze.cell(pv_row_max-1, col1).value
-            attr2 = ws_pauze.cell(pv_row_max-1, col2).value
-            
-            # Check of de rustigste PV hier vrij is én bekwaam is [3]
-            cel_min1 = ws_pauze.cell(pv_row_min, col1)
-            cel_min2 = ws_pauze.cell(pv_row_min, col2)
-            
-            if (cel_min1.value in [None, ""] and cel_min2.value in [None, ""] and
-                pv_kan_attr(pv_min_obj, attr1) and pv_kan_attr(pv_min_obj, attr2)):
-                
-                # Voer de wissel uit
-                cel_min1.value = cel_min2.value = student_naam
-                ws_pauze.cell(pv_row_min-1, col1).value = attr1
-                ws_pauze.cell(pv_row_min-1, col2).value = attr2
-                
-                # Wis de oude plek
-                cel_max1.value = cel_max2.value = None
-                ws_pauze.cell(pv_row_max-1, col1).value = None
-                ws_pauze.cell(pv_row_max-1, col2).value = None
-                
-                # Update de telling (behalve bij 'extra')
-                if normalize_attr(attr1) != 'extra':
-                    pv_lange_count[max_pv_naam] -= 1
-                    pv_lange_count[min_pv_naam] += 1
-                
-                found_swap = True
-                break # Start nieuwe pass met verse counts
-            idx += 2
-        else:
-            idx += 1
-            
-    if not found_swap: break # Geen mogelijkheden meer om te schuiven
 
 
 output = BytesIO()
