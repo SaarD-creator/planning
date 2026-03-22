@@ -1074,55 +1074,54 @@ for _run in range(num_runs):
     # Zorg dat al je functies (zoals plaats_student, korte_pauze_toewijzen) 
     # werken op de 'ws_pauze_tmp' in plaats van 'ws_pauze'.
 
-    # ---- VERBETERDE EVALUATIE (COPY-PASTE DIT DEEL) ----
-    
-    # 1. Bepaal de doelgroep: wie MOET pauze krijgen? (minstens 4 uur werken)
-    doelgroep = [s["naam"] for s in studenten if student_totalen.get(s["naam"], 0) >= 4]
-    
-    # 2. Controleer wie er effectief een pauze (kort of lang) heeft gekregen
-    ontvangers = set()
-    for pv, pv_row in pv_rows:
-        for col in pauze_cols:
-            cel_val = ws_pauze_tmp.cell(pv_row, col).value
-            if cel_val and str(cel_val).strip() != "":
-                ontvangers.add(str(cel_val).strip())
-    
-    # Check of iedereen uit de doelgroep minstens één keer is ingepland
-    iedereen_pauze = all(naam in ontvangers for naam in doelgroep)
-
-    # 3. Bereken de TOTALE WER KLAST per pauzevlinder
-    # We tellen elke cel (kolom) waar een student wordt opgevangen, 
-    # behalve als de attractie erboven 'Extra' is.
-    pv_werklast = Counter()
-    for pv_dict, pv_row_idx in pv_rows:
-        pv_naam = pv_dict["naam"]
-        pv_werklast[pv_naam] = 0
+    # ---- VERBETERDE EVALUATIE (VOLLEDIGE WER KLAST) ----
         
-        for col in pauze_cols:
-            naam_cel = ws_pauze_tmp.cell(pv_row_idx, col).value
-            # Als er een naam in de cel staat, is de PV aan het werk
-            if naam_cel and str(naam_cel).strip() != "":
-                # Kijk naar de attractie in de rij direct boven de naam
-                attr_boven = ws_pauze_tmp.cell(pv_row_idx - 1, col).value
-                # Telt alleen mee als het GEEN 'extra' is (vrij moment)
-                if attr_boven and normalize_attr(attr_boven) != 'extra':
-                    pv_werklast[pv_naam] += 1
+        # 1. Bepaal de doelgroep (studenten >= 4u)
+        doelgroep = [s["naam"] for s in studenten if student_totalen.get(s["naam"], 0) >= 4]
+        
+        # 2. Controleer wie er effectief een pauze heeft (kort óf lang)
+        ontvangers = set()
+        for pv_dict, pv_row_idx in pv_rows:
+            for col in pauze_cols:
+                cel_val = ws_pauze_tmp.cell(pv_row_idx, col).value
+                if cel_val and str(cel_val).strip() != "":
+                    ontvangers.add(str(cel_val).strip())
+        
+        # Check of iedereen uit de doelgroep minstens één pauzemoment heeft
+        iedereen_pauze = all(naam in ontvangers for naam in doelgroep)
 
-    # 4. Eerlijkheidsscore
-    # Een lange pauze vult 2 cellen en telt dus automatisch als +2 werklast.
-    # Een korte pauze vult 1 cel en telt als +1 werklast.
-    if pv_werklast:
-        eerlijkheid = max(pv_werklast.values()) - min(pv_werklast.values())
-    else:
-        eerlijkheid = 999
+        # 3. Bereken de TOTALE WER KLAST per pauzevlinder
+        # We tellen elke cel (kwartier) werk, behalve 'Extra' attracties
+        from collections import Counter
+        pv_werklast = Counter()
+        
+        for pv_dict, pv_row_idx in pv_rows:
+            pv_naam = pv_dict["naam"]
+            pv_werklast[pv_naam] = 0
+            
+            for col in pauze_cols:
+                naam_cel = ws_pauze_tmp.cell(pv_row_idx, col).value
+                # Alleen tellen als de PV iemand opvangt
+                if naam_cel and str(naam_cel).strip() != "":
+                    # Kijk naar de attractie in de rij direct boven de naam
+                    attr_boven = ws_pauze_tmp.cell(pv_row_idx - 1, col).value
+                    # Alleen optellen als het GEEN 'extra' is (dat is immers een vrij moment)
+                    if attr_boven and normalize_attr(attr_boven) != 'extra':
+                        pv_werklast[pv_naam] += 1
+        
+        # 4. Eerlijkheidsscore: verschil tussen de drukste en de rustigste PV
+        if pv_werklast:
+            # Lange pauzes vullen 2 cellen en tellen dus automatisch als 2 punten werklast
+            eerlijkheid = max(pv_werklast.values()) - min(pv_werklast.values())
+        else:
+            eerlijkheid = 999
 
-    # Score-tuple: (prioriteit op succes, daarna op kleinste verschil)
-    score = (iedereen_pauze, -eerlijkheid)
+        # De score is een combinatie: succes is heilig, daarna pas spreiding
+        score = (iedereen_pauze, -eerlijkheid)
 
-    if (best_score is None) or (score > best_score):
-        best_score = score
-        best_state = copy.deepcopy(ws_pauze_tmp)
-
+        if (best_score is None) or (score > best_score):
+            best_score = score
+            best_state = copy.deepcopy(ws_pauze_tmp)
 # Na alle runs: kopieer best_state naar ws_pauze
 if best_state is not None:
 
