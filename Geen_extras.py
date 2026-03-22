@@ -214,7 +214,26 @@ def compute_pauze_hours(open_uren):
     else:
         return list(open_uren)
 
-required_pauze_hours=compute_pauze_hours(open_uren)
+required_long_break_hours = compute_long_break_hours(open_uren)
+
+for s in studenten:
+    if s.get("is_pauzevlinder"):
+        s["uren_beschikbaar"] = [u for u in s["uren_beschikbaar"] if u not in required_long_break_hours]
+
+long_break_assignments = {hour: None for hour in required_long_break_hours}
+
+for hour in required_long_break_hours:
+    available_pauzevlinders = [s for s in studenten if s.get("is_pauzevlinder") and hour in s["uren_beschikbaar"]]
+    if available_pauzevlinders:
+        # Wijs de pauzevlinder toe met de minste lange pauzes
+        selected = min(available_pauzevlinders, key=lambda s: len([h for h in required_long_break_hours if h in s["assigned_hours"]]))
+        selected["assigned_hours"].append(hour)
+        long_break_assignments[hour] = selected["naam"]
+
+# Debugging: print de toewijzingen
+for hour, pauzevlinder in long_break_assignments.items():
+    print(f"Lange pauze om {hour} uur: {pauzevlinder}")
+
 
 for idx,pvnaam in enumerate(pauzevlinder_namen,start=1):
     for s in studenten:
@@ -1152,7 +1171,8 @@ for pv, pv_row in pv_rows:
 
 
 
-#ooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
+#oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
+
 
 # DEEL 4: Lange werkers (>6 uur) pauze inplannen – gegarandeerd
 # -----------------------------
@@ -1709,6 +1729,17 @@ def _pv_place_best_short(pv, pv_row, target_gap=10):
         return False
 
     # Hulpfuncties
+    def compute_long_break_hours(open_uren):
+        """Definieer lange pauze-uren op basis van de openingsuren."""
+        if 10 in open_uren and 18 in open_uren:
+            return [h for h in open_uren if 14 <= h <= 16]
+        elif 10 in open_uren and 17 in open_uren:
+            return [h for h in open_uren if 13 <= h <= 15]
+        elif 12 in open_uren and 18 in open_uren:
+            return [h for h in open_uren if 15 <= h <= 17]
+        else:
+            return [h for h in open_uren if h >= 14]
+
     def is_toegestaan_pv_col(col):
         if len(open_uren) <= 6:
             return True
@@ -2619,7 +2650,7 @@ def _move_short_pause(naam, from_row, from_col, to_row, to_col):
     ws_pauze.cell(to_row, to_col).border = thin_border
 
 def _recolor_pauze_sheet():
-    # Kleur korte pauze paars, lange (dubbel) groen, leeg lichtblauw
+    # Kleur korte pauze paars, lange (dubbele) groen, leeg lichtblauw
     for _pv, pv_row in pv_rows:
         for idx, col in enumerate(pauze_cols):
             cel = ws_pauze.cell(pv_row, col)
