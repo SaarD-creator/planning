@@ -1089,7 +1089,7 @@ for _run in range(num_runs):
                         is_lange = True
                 if not is_lange:
                     korte_pauze_ontvangers.add(str(cel.value).strip())
-    alle_studenten = [s["naam"] for s in studenten if student_totalen.get(s["naam"], 0) > 0]
+    alle_studenten = [s["naam"] for s in studenten if student_totalen.get(s["naam"], 0) >= 4]
     iedereen_pauze = all(naam in korte_pauze_ontvangers for naam in alle_studenten)
     # 2. Eerlijkheid: verschil max-min korte pauzes per pauzevlinder
     from collections import Counter
@@ -2085,7 +2085,7 @@ def _place_short_pause_for(naam):
 
 # verzamel alle namen met een lange pauze en sorteer op laatste einde (desc)
 names_with_long = []
-alle_studenten_namen = {s["naam"] for s in studenten if student_totalen.get(s["naam"], 0) > 0}
+alle_studenten_namen = {s["naam"] for s in studenten if student_totalen.get(s["naam"], 0) >= 4}
 for naam in alle_studenten_namen:
     if _has_long_pause(naam):
         end_idx = _last_long_pause_end_index(naam)
@@ -2260,7 +2260,7 @@ def kan_student_korte_pauze_op_plek(naam, pv_row, col):
     return True
 
 # Verzamel actuele lijst van studenten zonder korte pauze
-werkende_studenten = [s for s in studenten if student_totalen.get(s["naam"], 0) > 0 and not is_pauzevlinder(s["naam"])]
+werkende_studenten = [s for s in studenten if student_totalen.get(s["naam"], 0) >= 4 and not is_pauzevlinder(s["naam"])]
 studenten_zonder_korte_pauze = []
 for s in werkende_studenten:
     naam = s["naam"]
@@ -2745,7 +2745,7 @@ else:
     row_fb += 1
 
 # 2. Werkende studenten zonder korte pauze
-werkende_studenten = [s for s in studenten if student_totalen.get(s["naam"], 0) > 0]
+werkende_studenten = [s for s in studenten if student_totalen.get(s["naam"], 0) >= 4]
 studenten_zonder_korte_pauze = []
 for s in werkende_studenten:
     naam = s["naam"]
