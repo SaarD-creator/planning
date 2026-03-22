@@ -1053,75 +1053,70 @@ for row in ws_planning.iter_rows(min_row=2, values_only=True):
 
 # ---- OPTIMALISATIE: Meerdere planningen genereren en de beste kiezen ----
 import copy
-from collections import Counter
-
 best_score = None
 best_state = None
-num_runs = 20  # Verhoogd naar 20 voor een betere spreiding
-
+num_runs = 20
 for _run in range(num_runs):
-    # Maak een tijdelijke kopie van het werkblad om op te werken
+    # Maak een deep copy van de relevante werkbladen en variabelen
     ws_pauze_tmp = wb_out.copy_worksheet(ws_pauze)
     ws_pauze_tmp.title = f"Pauzevlinders_tmp_{_run}"
-    
-    # Reset alle naamcellen voor deze run
+    # Reset alle naamcellen
     for pv, pv_row in pv_rows:
         for col in pauze_cols:
             ws_pauze_tmp.cell(pv_row, col).value = None
-            ws_pauze_tmp.cell(pv_row - 1, col).value = None
-
-    # [HIER MOET JE BESTAANDE LOGICA VOOR HET PLAATSEN VAN LANGE EN KORTE PAUZES WORDEN AANGEROEPEN]
-    # Zorg dat al je functies (zoals plaats_student, korte_pauze_toewijzen) 
-    # werken op de 'ws_pauze_tmp' in plaats van 'ws_pauze'.
-
-    # ---- VERBETERDE EVALUATIE (VOLLEDIGE WER KLAST) ----
-        
-        # 1. Bepaal de doelgroep (studenten >= 4u)
-        doelgroep = [s["naam"] for s in studenten if student_totalen.get(s["naam"], 0) >= 4]
-        
-        # 2. Controleer wie er effectief een pauze heeft (kort óf lang)
-        ontvangers = set()
-        for pv_dict, pv_row_idx in pv_rows:
-            for col in pauze_cols:
-                cel_val = ws_pauze_tmp.cell(pv_row_idx, col).value
-                if cel_val and str(cel_val).strip() != "":
-                    ontvangers.add(str(cel_val).strip())
-        
-        # Check of iedereen uit de doelgroep minstens één pauzemoment heeft
-        iedereen_pauze = all(naam in ontvangers for naam in doelgroep)
-
-        # 3. Bereken de TOTALE WER KLAST per pauzevlinder
-        # We tellen elke cel (kwartier) werk, behalve 'Extra' attracties
+    # Herhaal de bestaande logica voor pauzeplanning, maar werk op ws_pauze_tmp
+    # ...existing code for pauzeplanning, but use ws_pauze_tmp instead of ws_pauze...
+    # (Voor deze patch: laat de bestaande logica staan, dit is een structuurvoorzet. Zie opmerking hieronder)
+    # ---- Evalueer deze planning ----
+    # 1. Iedereen een pauze?
+    korte_pauze_ontvangers = set()
+    for pv, pv_row in pv_rows:
+        for col in pauze_cols:
+            cel = ws_pauze_tmp.cell(pv_row, col)
+            if cel.value and str(cel.value).strip() != "":
+                # Check of het een korte pauze is (enkel blok, niet dubbel)
+                idx = pauze_cols.index(col)
+                is_lange = False
+                if idx+1 < len(pauze_cols):
+                    next_col = pauze_cols[idx+1]
+                    cel_next = ws_pauze_tmp.cell(pv_row, next_col)
+                    if cel_next.value == cel.value:
+                        is_lange = True
+                if idx > 0:
+                    prev_col = pauze_cols[idx-1]
+                    prev_cel = ws_pauze_tmp.cell(pv_row, prev_col)
+                    if prev_cel.value == cel.value:
+                        is_lange = True
+                if not is_lange:
+                    korte_pauze_ontvangers.add(str(cel.value).strip())
+    alle_studenten = [s["naam"] for s in studenten if student_totalen.get(s["naam"], 0) >= 4]
+    iedereen_pauze = all(naam in korte_pauze_ontvangers for naam in alle_studenten)
+     # 2. Eerlijkheid: tel ALLE blokjes werk (kolommen)
         from collections import Counter
         pv_werklast = Counter()
-        
-        for pv_dict, pv_row_idx in pv_rows:
-            pv_naam = pv_dict["naam"]
+        for pv, pv_row in pv_rows:
+            pv_naam = pv["naam"]
             pv_werklast[pv_naam] = 0
-            
             for col in pauze_cols:
-                naam_cel = ws_pauze_tmp.cell(pv_row_idx, col).value
-                # Alleen tellen als de PV iemand opvangt
-                if naam_cel and str(naam_cel).strip() != "":
-                    # Kijk naar de attractie in de rij direct boven de naam
-                    attr_boven = ws_pauze_tmp.cell(pv_row_idx - 1, col).value
-                    # Alleen optellen als het GEEN 'extra' is (dat is immers een vrij moment)
+                cel = ws_pauze_tmp.cell(pv_row, col)
+                if cel.value and str(cel.value).strip() != "":
+                    # Pak de attractie boven de naam
+                    attr_boven = ws_pauze_tmp.cell(pv_row - 1, col).value
+                    # Alleen tellen als het GEEN 'extra' is
                     if attr_boven and normalize_attr(attr_boven) != 'extra':
                         pv_werklast[pv_naam] += 1
         
-        # 4. Eerlijkheidsscore: verschil tussen de drukste en de rustigste PV
         if pv_werklast:
-            # Lange pauzes vullen 2 cellen en tellen dus automatisch als 2 punten werklast
+            # Nu telt een lange pauze (2 cellen) als 2, en een korte als 1
             eerlijkheid = max(pv_werklast.values()) - min(pv_werklast.values())
         else:
             eerlijkheid = 999
+    # Score: eerst iedereen_pauze, dan eerlijkheid
+    score = (iedereen_pauze, -eerlijkheid)
+    if (best_score is None) or (score > best_score):
+        best_score = score
+        best_state = copy.deepcopy(ws_pauze_tmp)
 
-        # De score is een combinatie: succes is heilig, daarna pas spreiding
-        score = (iedereen_pauze, -eerlijkheid)
-
-        if (best_score is None) or (score > best_score):
-            best_score = score
-            best_state = copy.deepcopy(ws_pauze_tmp)
 # Na alle runs: kopieer best_state naar ws_pauze
 if best_state is not None:
 
