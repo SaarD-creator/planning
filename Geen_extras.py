@@ -1069,50 +1069,53 @@ for _run in range(num_runs):
     # (Voor deze patch: laat de bestaande logica staan, dit is een structuurvoorzet. Zie opmerking hieronder)
     # ---- VERBETERDE EVALUATIE ----
         
-        # 1. Controleer of iedereen die recht heeft op pauze (>= 4u) er een heeft gekregen
+         # 1. Definieer wie er pauze MOET krijgen (minstens 4 uur werken)
+        # We halen deze informatie uit de student_totalen die eerder berekend zijn [1, 2]
+        doelgroep = [s["naam"] for s in studenten if student_totalen.get(s["naam"], 0) >= 4]
+        
+        # 2. Controleer wie er effectief een pauze heeft gekregen in deze run
         ontvangers = set()
-        for pv, pv_row in pv_rows:
+        for pv_dict, pv_row_idx in pv_rows:
             for col in pauze_cols:
-                cel_val = ws_pauze_tmp.cell(pv_row, col).value
+                cel_val = ws_pauze_tmp.cell(pv_row_idx, col).value
                 if cel_val and str(cel_val).strip() != "":
                     ontvangers.add(str(cel_val).strip())
         
         # Iedereen uit de doelgroep moet minstens één keer in de lijst staan
         iedereen_pauze = all(naam in ontvangers for naam in doelgroep)
 
-        # 2. Bereken de werkelijke werklast per pauzevlinder
-        # We tellen elke cel waar gewerkt wordt, behalve als de attractie 'Extra' is
+        # 3. Bereken de werkelijke werklast per pauzevlinder
+        # We importeren Counter hier lokaal voor de zekerheid
         from collections import Counter
         pv_werklast = Counter()
         
-        for pv, pv_row in pv_rows:
-            pv_naam = pv["naam"]
-            pv_werklast[pv_naam] = 0 # Initialiseer op 0
+        for pv_dict, pv_row_idx in pv_rows:
+            pv_naam = pv_dict["naam"]
+            pv_werklast[pv_naam] = 0 # Start op nul
             
             for col in pauze_cols:
-                naam_cel = ws_pauze_tmp.cell(pv_row, col).value
+                naam_cel = ws_pauze_tmp.cell(pv_row_idx, col).value
                 # Alleen tellen als er een student wordt opgevangen
                 if naam_cel and str(naam_cel).strip() != "":
-                    # Kijk naar de attractie in de rij erboven
-                    attr_boven = ws_pauze_tmp.cell(pv_row - 1, col).value
-                    # Alleen optellen als het GEEN 'extra' is (vrij moment)
+                    # Kijk naar de attractie in de rij direct boven de studentnaam
+                    attr_boven = ws_pauze_tmp.cell(pv_row_idx - 1, col).value
+                    # Alleen optellen als het GEEN 'extra' is (vrij moment) [3-5]
                     if attr_boven and normalize_attr(attr_boven) != 'extra':
                         pv_werklast[pv_naam] += 1
         
-        # 3. Eerlijkheidsscore: het verschil tussen de zwaarst belaste en minst belaste PV
+        # 4. Eerlijkheidsscore berekenen
         if pv_werklast:
-            # We kijken naar de werkelijke cel-telling (lange pauzes tellen zo automatisch dubbel)
+            # Verschil tussen de PV met de meeste en de minste werk-blokken
             eerlijkheid = max(pv_werklast.values()) - min(pv_werklast.values())
         else:
             eerlijkheid = 999
 
-        # Score: prioriteit aan 'iedereen pauze', daarna kleinste verschil (hoogste -eerlijkheid)
+        # De score is een combinatie: prioriteit aan succes, dan aan eerlijkheid [6]
         score = (iedereen_pauze, -eerlijkheid)
 
         if (best_score is None) or (score > best_score):
             best_score = score
             best_state = copy.deepcopy(ws_pauze_tmp)
-
 # Na alle runs: kopieer best_state naar ws_pauze
 if best_state is not None:
 
