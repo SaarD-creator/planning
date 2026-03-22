@@ -1092,25 +1092,25 @@ for _run in range(num_runs):
     alle_studenten = [s["naam"] for s in studenten if student_totalen.get(s["naam"], 0) >= 4]
     iedereen_pauze = all(naam in korte_pauze_ontvangers for naam in alle_studenten)
      # 2. Eerlijkheid: tel ALLE blokjes werk (kolommen)
-        from collections import Counter
-        pv_werklast = Counter()
-        for pv, pv_row in pv_rows:
-            pv_naam = pv["naam"]
-            pv_werklast[pv_naam] = 0
-            for col in pauze_cols:
-                cel = ws_pauze_tmp.cell(pv_row, col)
-                if cel.value and str(cel.value).strip() != "":
+    from collections import Counter
+    pv_werklast = Counter()
+    for pv, pv_row in pv_rows:
+        pv_naam = pv["naam"]
+        pv_werklast[pv_naam] = 0
+        for col in pauze_cols:
+            cel = ws_pauze_tmp.cell(pv_row, col)
+            if cel.value and str(cel.value).strip() != "":
                     # Pak de attractie boven de naam
-                    attr_boven = ws_pauze_tmp.cell(pv_row - 1, col).value
+                attr_boven = ws_pauze_tmp.cell(pv_row - 1, col).value
                     # Alleen tellen als het GEEN 'extra' is
-                    if attr_boven and normalize_attr(attr_boven) != 'extra':
-                        pv_werklast[pv_naam] += 1
+                if attr_boven and normalize_attr(attr_boven) != 'extra':
+                    pv_werklast[pv_naam] += 1
         
-        if pv_werklast:
+    if pv_werklast:
             # Nu telt een lange pauze (2 cellen) als 2, en een korte als 1
-            eerlijkheid = max(pv_werklast.values()) - min(pv_werklast.values())
-        else:
-            eerlijkheid = 999
+        eerlijkheid = max(pv_werklast.values()) - min(pv_werklast.values())
+    else:
+        eerlijkheid = 999
     # Score: eerst iedereen_pauze, dan eerlijkheid
     score = (iedereen_pauze, -eerlijkheid)
     if (best_score is None) or (score > best_score):
