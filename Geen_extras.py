@@ -550,7 +550,7 @@ def _try_place_block_on_attr(student, block_hours, attr):
     # Voeg de nieuwe uren toe
     nieuwe_uren = set(block_hours)
     totaal_uren = uren_bij_attr | nieuwe_uren
-    if len(totaal_uren) > 4:
+    if len(totaal_uren) > 6:
         return False
     # Plaatsen
     for h in block_hours:
