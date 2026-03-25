@@ -1273,7 +1273,7 @@ for pv in selected:
 lange_werkers = [s for s in studenten
     if (
         student_totalen.get(s["naam"], 0) > 6
-        or ("-18" in str(s["naam"]) and student_totalen.get(s["naam"], 0) > 0)
+        or ("-18" in str(s["naam"]) and student_totalen.get(s["naam"], 0) > 4)
     )
     and s["naam"] not in [pv["naam"] for pv in selected]
 ]
