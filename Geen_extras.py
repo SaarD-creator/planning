@@ -2788,6 +2788,35 @@ else:
     vinkje_cel.font = Font(bold=True, color="006100")
     row_fb += 1
 
+
+### -------------------------------------------------------------
+### EXTRA INFO TOEVOEGEN AAN PAUZEPLANNING (A12 e.v.)
+### -------------------------------------------------------------
+# We gebruiken de 'Input' sheet van het geüploade bestand [1]
+# en de 'Pauzevlinders' sheet van het resultaat [2, 3]
+ws_input_data = wb["Input"]
+ws_pauze_sheet = wb_out["Pauzevlinders"]
+
+# Definieer de witte achtergrond (zoals elders in het script) [4]
+witte_fill = PatternFill(start_color="FFFFFF", fill_type="solid")
+
+# Loop door de rijen 15 tot en met 30 van de Input-sheet
+for i, input_rij in enumerate(range(15, 31)):
+    # Kolom BO is de 67e kolom in Excel
+    waarde = ws_input_data.cell(row=input_rij, column=67).value
+    
+    # We starten in de doel-sheet vanaf rij 12 in kolom A (1)
+    doel_rij = 12 + i
+    doel_cel = ws_pauze_sheet.cell(row=doel_rij, column=1, value=waarde)
+    
+    # Pas de witte achtergrond toe [4]
+    doel_cel.fill = witte_fill
+    
+    # Indien je ook de standaard randen wilt behouden die elders gebruikt worden:
+    # doel_cel.border = thin_border 
+
+
+
 wb_out.save(output)
 output.seek(0)  # Zorg dat lezen vanaf begin kan
 
