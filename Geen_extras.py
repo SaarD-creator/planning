@@ -2806,7 +2806,7 @@ for i, input_rij in enumerate(range(15, 31)):
     waarde = ws_input_data.cell(row=input_rij, column=67).value
     
     # We starten in de doel-sheet vanaf rij 12 in kolom A (1)
-    doel_rij = 12 + i
+    doel_rij = 13 + i
     doel_cel = ws_pauze_sheet.cell(row=doel_rij, column=1, value=waarde)
     
     # Pas de witte achtergrond toe [4]
