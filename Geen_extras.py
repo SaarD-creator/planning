@@ -1212,7 +1212,7 @@ def parse_header_uur(header):
 # ---- Pauze-restrictie: geen korte pauze in eerste 12 kwartieren van de pauzeplanning (tenzij <=6u open) ----
 def get_verboden_korte_pauze_kolommen():
     """Geeft de kolomnummers van de eerste 12 kwartieren in ws_pauze (B t/m M)."""
-    return list(range(2, 10))  # kolommen 2 t/m 9 (B t/m M)
+    return list(range(2, 12))  # kolommen 2 t/m 11 (B t/m M)
 
 def is_korte_pauze_toegestaan_col(col):
     if len(open_uren) <= 6:
