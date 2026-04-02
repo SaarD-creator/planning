@@ -942,9 +942,11 @@ for col_idx, uur in enumerate(uren_rij1, start=2):
     c.alignment = center_align
     c.border = thin_border
 
-# Zet cel A1 ook in licht kleurtje
-a1 = ws_pauze.cell(1, 1, "")
+### Zet de datum van vandaag in cel A1 van de pauzeplanning
+a1 = ws_pauze.cell(1, 1, vandaag)
+a1.font = Font(bold=True)
 a1.fill = light_fill
+a1.alignment = center_align
 a1.border = thin_border
 
 # -----------------------------
@@ -1214,9 +1216,21 @@ def get_verboden_korte_pauze_kolommen():
     """Geeft de kolomnummers van de eerste 12 kwartieren in ws_pauze (B t/m M)."""
     return list(range(2, 12))  # kolommen 2 t/m 11 (B t/m M)
 
-def is_korte_pauze_toegestaan_col(col):
+def is_korte_pauze_toegestaan_col(col, student_naam=None):
+    """
+    Controleert of een korte pauze in deze kolom mag.
+    Uitzondering: als een student vóór 15:00 stopt, mag de pauze ALTIJD.
+    """
     if len(open_uren) <= 6:
         return True
+    
+    # Check of de student een vroege stopper is (stopt vóór 15u)
+    if student_naam:
+        werk_uren = get_student_work_hours(student_naam)
+        # De check 'if werk_uren' voorkomt dat de code crasht bij een lege lijst
+        if werk_uren and max(werk_uren) < 15:
+            return True
+            
     return col not in get_verboden_korte_pauze_kolommen()
 
 def normalize_attr(name):
@@ -1492,7 +1506,7 @@ def plaats_student(student, harde_mode=False):
             col_uur = parse_header_uur(col_header)
             if col_uur != uur:
                 continue
-            if not is_korte_pauze_toegestaan_col(col):
+            if not is_korte_pauze_toegestaan_col(col, naam):
                 continue
             if not pv_kan_attr(pv, attr) and not is_student_extra(naam):
                 continue
@@ -1523,26 +1537,6 @@ def plaats_student(student, harde_mode=False):
                             reg["korte"] = True
                             return True
     return False
-
-
-### -----------------------------
-### FASE 0: Kritieke korte pauzes (vroege stoppers)
-### -----------------------------
-# We identificeren studenten die een heel klein venster hebben (bijv. maar 1 of 2 uur beschikbaar in de pauze-uren)
-def is_kritiek_venster(naam):
-    werk_uren = get_student_work_hours(naam)
-    if not werk_uren: return False
-    # Tel hoeveel uur de student werkt binnen de uren dat er pauzevlinders zijn
-    beschikbare_pauze_uren = [u for u in werk_uren if u in required_pauze_hours]
-    # Als een student maar 1 of 2 uur de tijd heeft voor een pauze, is dat kritiek
-    return len(beschikbare_pauze_uren) <= 2
-
-kritieke_studenten = [s for s in studenten if is_kritiek_venster(s["naam"]) and s["naam"] not in [pv["naam"] for pv in selected]]
-
-# Plan deze studenten EERST in, nog vóór de lange pauzes van 30 min
-korte_pauze_toewijzen(kritieke_studenten)
-
-
 
 # ---- Fase 1: zachte toewijzing (niet overschrijven) ----
 def heeft_al_lange_pauze(naam):
@@ -2015,7 +2009,7 @@ def _place_short_pause_for(naam):
         uur = parse_header_uur(header)
         if uur not in werk_uren or uur in verboden_uren:
             return False
-        if not is_korte_pauze_toegestaan_col(col):
+        if not is_korte_pauze_toegestaan_col(col, naam):
             return False
         attr = vind_attractie_op_uur(naam, uur)
         if not attr:
@@ -2068,7 +2062,7 @@ def _place_short_pause_for(naam):
     # Kies uit alle geldige (pv_row, col) paren, sorteer op pv fairness en dan op kolomindex die het verst ligt van begin (rechts-bias)
     pairs = []
     for col in pauze_cols:
-        if not is_korte_pauze_toegestaan_col(col):
+        if not is_korte_pauze_toegestaan_col(col, naam):
             continue
         header = ws_pauze.cell(1, col).value
         uur = parse_header_uur(header)
@@ -2186,7 +2180,7 @@ def korte_pauze_toewijzen(studenten_lijst):
                     col_uur = parse_header_uur(col_header)
                     if col_uur != uur:
                         continue
-                    if not is_korte_pauze_toegestaan_col(col):
+                    if not is_korte_pauze_toegestaan_col(col, naam):
                         continue
                     if not pv_kan_attr(pv, attr) and not is_student_extra(naam):
                         continue
@@ -2275,7 +2269,7 @@ def kan_student_korte_pauze_op_plek(naam, pv_row, col):
     if not pv_kan_attr(pv, attr) and not is_student_extra(naam):
         return False
     # Kolom moet korte pauze toestaan
-    if not is_korte_pauze_toegestaan_col(col):
+    if not is_korte_pauze_toegestaan_col(col, naam):
         return False
     return True
 
@@ -2586,7 +2580,7 @@ def _can_place_short_pause(naam, pv_row, col):
     if ws_pauze.cell(pv_row, col).value not in [None, ""]:
         return False
     # kolom moet korte pauze toelaten
-    if not is_korte_pauze_toegestaan_col(col):
+    if not is_korte_pauze_toegestaan_col(col, naam):
         return False
     # student moet werken op dit uur en niet in eerste/laatste werkuur
     header = ws_pauze.cell(1, col).value
