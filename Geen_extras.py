@@ -1524,6 +1524,26 @@ def plaats_student(student, harde_mode=False):
                             return True
     return False
 
+
+### -----------------------------
+### FASE 0: Kritieke korte pauzes (vroege stoppers)
+### -----------------------------
+# We identificeren studenten die een heel klein venster hebben (bijv. maar 1 of 2 uur beschikbaar in de pauze-uren)
+def is_kritiek_venster(naam):
+    werk_uren = get_student_work_hours(naam)
+    if not werk_uren: return False
+    # Tel hoeveel uur de student werkt binnen de uren dat er pauzevlinders zijn
+    beschikbare_pauze_uren = [u for u in werk_uren if u in required_pauze_hours]
+    # Als een student maar 1 of 2 uur de tijd heeft voor een pauze, is dat kritiek
+    return len(beschikbare_pauze_uren) <= 2
+
+kritieke_studenten = [s for s in studenten if is_kritiek_venster(s["naam"]) and s["naam"] not in [pv["naam"] for pv in selected]]
+
+# Plan deze studenten EERST in, nog vóór de lange pauzes van 30 min
+korte_pauze_toewijzen(kritieke_studenten)
+
+
+
 # ---- Fase 1: zachte toewijzing (niet overschrijven) ----
 def heeft_al_lange_pauze(naam):
     # Check of student al een dubbele blok (lange pauze) heeft in het pauzeoverzicht
