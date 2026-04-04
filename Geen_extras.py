@@ -1,3 +1,5 @@
+
+#uitschakelen attracties op bepaalde uren lijkt te werken!
 #samenvoegen attracties per uur werkttttt!!! Kleine bug is er uit gehaald
 #hele dag bij attractie werkt
 # probleem met twee
@@ -128,37 +130,44 @@ for rij in range(2,500):
     })
 
 
+# Nieuwe dictionary voor uren dat een attractie DICHT is
+dichte_uren_per_attr = defaultdict(set)
+# AJ t/m AR (kolom 36 t/m 44)
+uur_kolommen = list(range(36, 45)) 
+
+for rij in range(24, 30): # Rij 24 t/m 29
+    attr_naam_raw = ws.cell(rij, 45).value # Kolom AS
+    if attr_naam_raw:
+        # Belangrijk: Gebruik normalize_attr voor een eerlijke vergelijking [3]
+        attr_naam = normalize_attr(attr_naam_raw)
+        for col_idx in uur_kolommen:
+            val = ws.cell(rij, col_idx).value
+            if val in [1, True, "WAAR", "X"]:
+                uur = 10 + (col_idx - 36)
+                dichte_uren_per_attr[attr_naam].add(uur)
+
 # -----------------------------
 # Samenvoeg-attracties (per uur)
 # -----------------------------
 
-# Resultaat:
-# uur_samenvoegingen = {
-#   10: [ ["Attractie 3", "Attractie 5"] ],
-#   11: [ ["Attractie 2", "Attractie 7", "Attractie 9"] ],
-# }
 
+# In DEEL 1 bij "Samenvoeg-attracties (per uur)"
 uur_samenvoegingen = defaultdict(list)
+uur_kolommen = list(range(36, 45)) 
 
-# Kolommen AJ (=10-11u) t.e.m. AR (=18-19u)
-uur_kolommen = list(range(36, 45))  # AJ=36
-
-for rij in range(14, 22):  # 14 t.e.m. 21
-    # lees attracties in AS–AU
+for rij in range(14, 22):  # Rij 14 t/m 21 voor samenvoegingen
+    # Lees de groep (AS, AT, AU)
     groep = []
-    for col in range(45, 48):  # AS, AT, AU
+    for col in range(45, 48): 
         val = ws.cell(rij, col).value
-        if val:
-            groep.append(str(val).strip())
-
-    if len(groep) < 2:
-        continue
-
-    # check per uur of hokje aan staat
-    for idx, kol in enumerate(uur_kolommen):
-        if ws.cell(rij, kol).value in [1, True, "WAAR", "X"]:
-            uur = 10 + idx
-            uur_samenvoegingen[uur].append(groep)
+        if val: groep.append(str(val).strip())
+    
+    if len(groep) > 1:
+        # Check per uur of de samenvoeging actief is (AJ t/m AR)
+        for col_idx in uur_kolommen:
+            if ws.cell(rij, col_idx).value in [1, True, "WAAR", "X"]:
+                uur = 10 + (col_idx - 36)
+                uur_samenvoegingen[uur].append(groep)
 
 
 # -----------------------------
@@ -208,7 +217,7 @@ def compute_pauze_hours(open_uren):
     elif 12 in open_uren and 18 in open_uren:
         return [h for h in open_uren if 13 <= h <= 17]
     elif 14 in open_uren and 18 in open_uren:
-        return [h for h in open_uren if 16 <= h <= 17]
+        return [h for h in open_uren if 15 <= h <= 17]
     else:
         return list(open_uren)
 
@@ -263,58 +272,73 @@ for nieuwe in samengevoegde_attracties:
 # -----------------------------
 
 actieve_attracties_per_uur = {}
-
-
-
+# Gebruik de raw aantallen als basis
+aantallen = {uur: {a: aantallen_raw.get(a, 1) for a in attracties_te_plannen} for uur in open_uren}
 
 for uur in open_uren:
-    actief = set(attracties_te_plannen)
+    actief = set()
+    # 1. Voeg eerst alle individuele attracties toe die NIET dicht zijn
+    for a in attracties_te_plannen:
+        if " + " in a: continue # Sla samengevoegde namen hier nog even over
+        
+        if uur in dichte_uren_per_attr.get(normalize_attr(a), set()):
+            aantallen[uur][a] = 0
+        else:
+            actief.add(a)
 
-    for groep in uur_samenvoegingen.get(uur, []):
-        nieuwe = " + ".join(groep)
-        # losse attracties verdwijnen
-        for a in groep:
-            actief.discard(a)
-        # samengevoegde verschijnt
-        actief.add(nieuwe)
+    # 2. Verwerk de samenvoegingen voor dit specifieke uur
+    huidige_groepen = uur_samenvoegingen.get(uur, [])
+    for groep in huidige_groepen:
+        samengevoegde_naam = " + ".join(groep)
+        
+        # Voeg de samengevoegde attractie toe aan de planning
+        actief.add(samengevoegde_naam)
+        aantallen[uur][samengevoegde_naam] = 1
+        
+        # VERWIJDER de onderdelen uit de actieve lijst (voorkomt dubbele telling)
+        for onderdeel in groep:
+            if onderdeel in actief:
+                actief.remove(onderdeel)
+            aantallen[uur][onderdeel] = 0
 
     actieve_attracties_per_uur[uur] = actief
 
 
 
-
-
-# -----------------------------
-# Compute aantallen per hour + red spots
-# -----------------------------
-aantallen = {uur: {a: 1 for a in attracties_te_plannen} for uur in open_uren}
-red_spots = {uur: set() for uur in open_uren}          # attractie volledig verboden
-second_spot_blocked = {uur: set() for uur in open_uren}  # alleen plek 2 verboden
+### -----------------------------
+### Compute aantallen per hour + red spots (GEÏNTEGREERD)
+### -----------------------------
+red_spots = {uur: set() for uur in open_uren}          
+second_spot_blocked = {uur: set() for uur in open_uren}  
 
 for uur in open_uren:
-    # Hoeveel studenten beschikbaar dit uur (excl. pauzevlinders op duty)
+    # 1. Hoeveel studenten zijn er dit uur echt beschikbaar? [1]
     student_count = sum(
         1 for s in studenten
         if uur in s["uren_beschikbaar"] and not (
             s["is_pauzevlinder"] and uur in required_pauze_hours
         )
     )
-    # Hoeveel attracties minimaal bemand moeten worden
-    base_spots = sum(
-    1 for a in actieve_attracties_per_uur[uur]
-    if aantallen_raw.get(a, 0) >= 1
-)
+    
+    # 2. Hoeveel attracties moeten dit uur minimaal 1 persoon hebben? [1]
+    # We kijken naar de actieve lijst van dat uur (rekening houdend met uitschakelingen/samenvoegingen)
+    base_spots = sum(1 for a in actieve_attracties_per_uur[uur] if aantallen[uur].get(a, 0) >= 1)
+    
+    # 3. Bereken het overschot
     extra_spots = student_count - base_spots
 
-    # Allocate 2e plekken volgens prioriteit
+    # 4. Verdeel de tweede plekken op basis van de prioriteitslijst uit Excel (BA5:BA11) [2]
     for attr in second_priority_order:
-        if attr in aantallen_raw and aantallen_raw[attr] == 2:
+        # Check of de attractie dit uur actief is én of hij normaal 2 personen nodig heeft [2, 3]
+        if attr in actieve_attracties_per_uur[uur] and aantallen_raw.get(attr) == 2:
             if extra_spots > 0:
+                # Er is nog een student over voor een tweede plek
                 aantallen[uur][attr] = 2
                 extra_spots -= 1
             else:
+                # Geen studenten meer over? Blokkeer de tweede plek voor dit uur
                 second_spot_blocked[uur].add(attr)
-
+                aantallen[uur][attr] = 1  # Forceer het aantal voor dit uur naar 1
 
 
 # -----------------------------
@@ -754,6 +778,8 @@ wb_out = Workbook()
 ws_out = wb_out.active
 ws_out.title = "Planning"
 
+gray_fill = PatternFill(start_color="808080", fill_type="solid")
+
 # Witte fill voor headers en attracties
 white_fill = PatternFill(start_color="FFFFFF", fill_type="solid")
 pv_fill = PatternFill(start_color="FFF2CC", fill_type="solid")
@@ -804,45 +830,92 @@ while len(unique_colors) < needed:
 
 student_kleuren = dict(zip(alle_namen, unique_colors))
 
-# Header
 ws_out.cell(1, 1, vandaag).font = Font(bold=True)
 ws_out.cell(1, 1).fill = white_fill
+
 for col_idx, uur in enumerate(sorted(open_uren), start=2):
     ws_out.cell(1, col_idx, f"{uur}:00").font = Font(bold=True)
     ws_out.cell(1, col_idx).fill = white_fill
     ws_out.cell(1, col_idx).alignment = center_align
     ws_out.cell(1, col_idx).border = thin_border
 
+# --- NIEUWE LOGICA VOOR AS2 VINKJE ---
+# AS is de 45e kolom in de Input-sheet (ws)
+as2_vinkje = ws.cell(2, 45).value 
+if as2_vinkje in [1, True, "WAAR", "X"]:
+    # Cel B1 is kolom 2, rij 1
+    ws_out.cell(1, 2).value = "9u30-11u"
+    # Cel J1 is kolom 10, rij 1
+    ws_out.cell(1, 10).value = "18u-19u30"
+# -------------------------------------
+    
+
 rij_out = 2
 for attr in alle_actieve_attracties:
-    # FIX: correcte berekening max_pos
+    # 1. Bepaal hoeveel rijen deze attractie nodig heeft (1 of 2 plekken)
     max_pos = max(
         max(aantallen[uur].get(attr, 1) for uur in open_uren),
         max(per_hour_assigned_counts[uur].get(attr, 0) for uur in open_uren)
     )
 
     for pos_idx in range(1, max_pos + 1):
-        naam_attr = attr if max_pos == 1 else f"{attr} {pos_idx}"
-        ws_out.cell(rij_out, 1, naam_attr).font = Font(bold=True)
+        # --- LAYOUT: Naam gevolgd door spatie en nummer (zonder haakjes) ---
+        display_name = f"{attr} {pos_idx}" if max_pos > 1 else attr
+        ws_out.cell(rij_out, 1, display_name).font = Font(bold=True)
         ws_out.cell(rij_out, 1).fill = white_fill
         ws_out.cell(rij_out, 1).border = thin_border
 
-
         for col_idx, uur in enumerate(sorted(open_uren), start=2):
-            # Red spots nu wit maken
-            if attr in second_spot_blocked.get(uur, set()) and pos_idx == 2:
-                ws_out.cell(rij_out, col_idx, "").fill = white_fill
-                ws_out.cell(rij_out, col_idx).border = thin_border
+            cell = ws_out.cell(rij_out, col_idx)
+
+            # Haal de studentnaam op voor dit uur en deze positie
+            namen = assigned_map.get((uur, attr), [])
+            naam = namen[pos_idx-1] if pos_idx-1 < len(namen) else ""
+
+            # --- LOGICA VOOR GRIJS KLEUREN ---
+            current_attr_norm = normalize_attr(attr)
+            is_samengesteld = " + " in attr
+            groepen_dit_uur = uur_samenvoegingen.get(uur, [])
+            
+            moet_grijs = False
+
+            # A. Check of de attractie dit uur gesloten is
+            if uur in dichte_uren_per_attr.get(current_attr_norm, set()):
+                moet_grijs = True
+
+            # B. Check voor samengestelde attracties (bv. 'A + B')
+            elif is_samengesteld:
+                # De samengevoegde rij is grijs als deze specifieke groep dit uur NIET actief is
+                onderdelen_set = {normalize_attr(x.strip()) for x in attr.split("+")}
+                actief_als_groep = any({normalize_attr(g) for g in groep} == onderdelen_set for groep in groepen_dit_uur)
+                if not actief_als_groep:
+                    moet_grijs = True
+
+            # C. Check voor individuele attracties (bv. 'A')
             else:
-                namen = assigned_map.get((uur, attr), [])
-                naam = namen[pos_idx - 1] if pos_idx - 1 < len(namen) else ""
-                ws_out.cell(rij_out, col_idx, naam).alignment = center_align
-                ws_out.cell(rij_out, col_idx).border = thin_border
-                if naam and naam in student_kleuren:
-                    ws_out.cell(rij_out, col_idx).fill = PatternFill(start_color=student_kleuren[naam], fill_type="solid")
+                # De individuele rij wordt grijs als de attractie opgaat in een samenvoeging
+                is_onderdeel_van_samenvoeging = any(current_attr_norm in [normalize_attr(g) for g in groep] for groep in groepen_dit_uur)
+                if is_onderdeel_van_samenvoeging:
+                    moet_grijs = True
+
+            # D. Check of de tweede plek geblokkeerd is (red spots)
+            if pos_idx == 2 and attr in second_spot_blocked.get(uur, set()):
+                moet_grijs = True
+
+            # --- Cel invullen en opmaken ---
+            cell.value = naam
+            cell.alignment = center_align
+            cell.border = thin_border
+
+            if moet_grijs:
+                cell.fill = gray_fill  # Grijs uit je bronnen
+            elif naam and naam in student_kleuren:
+                cell.fill = PatternFill(start_color=student_kleuren[naam], fill_type="solid")
+            else:
+                cell.fill = white_fill
 
         rij_out += 1
-
+        
 # Pauzevlinders
 rij_out += 1
 for pv_idx, pvnaam in enumerate(pauzevlinder_namen, start=1):
@@ -2803,31 +2876,34 @@ else:
     row_fb += 1
 
 
-### -------------------------------------------------------------
-### EXTRA INFO TOEVOEGEN AAN PAUZEPLANNING (A12 e.v.)
-### -------------------------------------------------------------
-# We gebruiken de 'Input' sheet van het geüploade bestand [1]
-# en de 'Pauzevlinders' sheet van het resultaat [2, 3]
+##### EXTRA INFO TOEVOEGEN AAN PAUZEPLANNING (A12 e.v.)
+##### -------------------------------------------------------------
+### We gebruiken de 'Input' sheet van het geüploade bestand
+### en de 'Pauzevlinders' sheet van het resultaat
 ws_input_data = wb["Input"]
 ws_pauze_sheet = wb_out["Pauzevlinders"]
 
-# Definieer de witte achtergrond (zoals elders in het script) [4]
+### Definieer de witte achtergrond
 witte_fill = PatternFill(start_color="FFFFFF", fill_type="solid")
 
-# Loop door de rijen 15 tot en met 30 van de Input-sheet
-for i, input_rij in enumerate(range(15, 31)):
-    # Kolom BO is de 67e kolom in Excel
-    waarde = ws_input_data.cell(row=input_rij, column=67).value
-    
-    # We starten in de doel-sheet vanaf rij 12 in kolom A (1)
-    doel_rij = 14 + i
-    doel_cel = ws_pauze_sheet.cell(row=doel_rij, column=1, value=waarde)
-    
-    # Pas de witte achtergrond toe [4]
-    doel_cel.fill = witte_fill
-    
-    # Indien je ook de standaard randen wilt behouden die elders gebruikt worden:
-    # doel_cel.border = thin_border 
+# --- NIEUWE LOGICA VOOR BN15 VINKJE ---
+# BN is de 66e kolom in Excel. We controleren cel BN15.
+bn15_vinkje = ws_input_data.cell(row=15, column=66).value
+
+if bn15_vinkje in [1, True, "WAAR", "X"]:
+    # Loop door de rijen 15 tot en met 30 van de Input-sheet
+    for i, input_rij in enumerate(range(15, 31)):
+        # Kolom BO is de 67e kolom in Excel
+        waarde = ws_input_data.cell(row=input_rij, column=67).value
+        
+        if waarde:
+            # Schrijf de waarde naar kolom A van de pauzeplanning, beginnend bij rij 12
+            target_rij = 12 + i
+            cel = ws_pauze_sheet.cell(row=target_rij, column=1, value=waarde)
+            cel.fill = witte_fill
+            cel.border = thin_border
+            cel.alignment = Alignment(horizontal="left", vertical="center")
+# -------------------------------------
 
 
 
