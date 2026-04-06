@@ -759,16 +759,51 @@ for _ in range(max_iterations):
 
 
 # -----------------------------
+# Volgorde attracties uit Input!BL16:BL33
+# -----------------------------
+input_volgorde = []
+for rij in range(16, 34):  # 16 t.e.m. 33
+    waarde = ws[f"BL{rij}"].value
+    if waarde:
+        input_volgorde.append(str(waarde).strip())
+
+# -----------------------------
 # Alle attracties die minstens één keer actief zijn (voor output)
 # -----------------------------
 alle_actieve_attracties = set()
 for uur in open_uren:
     alle_actieve_attracties |= actieve_attracties_per_uur.get(uur, set())
 
-alle_actieve_attracties = sorted(alle_actieve_attracties)
+# Eerst de gewone attracties in de volgorde van BL16:BL33
+geordende_attracties = [a for a in input_volgorde if a in alle_actieve_attracties]
 
+# Samengevoegde attracties slim invoegen:
+# bv. "A + B" direct na de laatste van A/B in de inputvolgorde
+samengestelde_attracties = [a for a in alle_actieve_attracties if " + " in str(a)]
+overige_attracties = [
+    a for a in alle_actieve_attracties
+    if a not in geordende_attracties and a not in samengestelde_attracties
+]
 
-    
+for sameng in samengestelde_attracties:
+    onderdelen = [x.strip() for x in str(sameng).split("+")]
+
+    # Zoek de positie van het laatste onderdeel in de huidige lijst
+    laatst_gevonden_index = -1
+    for onderdeel in onderdelen:
+        if onderdeel in geordende_attracties:
+            idx = geordende_attracties.index(onderdeel)
+            laatst_gevonden_index = max(laatst_gevonden_index, idx)
+
+    if laatst_gevonden_index >= 0:
+        geordende_attracties.insert(laatst_gevonden_index + 1, sameng)
+    else:
+        # Als geen enkel onderdeel in de inputvolgorde staat,
+        # zet hem voorlopig bij de rest
+        overige_attracties.append(sameng)
+
+# Voeg tenslotte nog attracties toe die niet in BL16:BL33 stonden
+alle_actieve_attracties = geordende_attracties + overige_attracties
 
 # -----------------------------
 
@@ -4363,3 +4398,4 @@ st.download_button(
     data=output.getvalue(),
     file_name=f"Planning_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 )
+                                           
