@@ -1,3 +1,4 @@
+#betere verdeling 3 uur blokken, maar te veel 6 uur bij zelfde attractie & 1+3 logica voor 9u30 ipv 3+1 & 2+2 logica voor 4 uur opt einde
 
 #uitschakelen attracties op bepaalde uren lijkt te werken!
 #samenvoegen attracties per uur werkttttt!!! Kleine bug is er uit gehaald
@@ -471,7 +472,50 @@ for vp in vaste_plaatsingen:
     student["uren_beschikbaar"] = []
 
 
-studenten_sorted = sorted(studenten_workend, key=lambda s: s["aantal_attracties"])
+# -----------------------------
+# Sorteervolgorde studenten
+# Eerst op aantal attracties,
+# daarna op vaste tie-break regel uit BU2
+# -----------------------------
+bu2_waarde = ws["BU2"].value
+try:
+    tie_break_mode = int(bu2_waarde)
+except:
+    tie_break_mode = 1
+
+if tie_break_mode not in [1, 2, 3, 4, 5]:
+    tie_break_mode = 1
+
+def student_tie_break_key(student):
+    naam = str(student["naam"]).strip().lower()
+
+    if tie_break_mode == 1:
+        # gewone alfabetische volgorde
+        return naam
+
+    elif tie_break_mode == 2:
+        # omgekeerde alfabetische volgorde
+        # opgelost via reversed-string zodat sorted(..., reverse=False) kan blijven werken
+        return "".join(chr(255 - ord(c)) for c in naam)
+
+    elif tie_break_mode == 3:
+        # eerst op aantal letters, daarna gewoon alfabetisch
+        return (len(naam), naam)
+
+    elif tie_break_mode == 4:
+        # alfabetisch op basis van laatste letters
+        return naam[::-1]
+
+    elif tie_break_mode == 5:
+        # omgekeerde van mode 4
+        return "".join(chr(255 - ord(c)) for c in naam[::-1])
+
+    return naam
+
+studenten_sorted = sorted(
+    studenten_workend,
+    key=lambda s: (s["aantal_attracties"], student_tie_break_key(s))
+)
 
 
 # -----------------------------
@@ -559,55 +603,124 @@ def _has_capacity(attr, uur):
 
 
 def _try_place_block_on_attr(student, block_hours, attr):
-    """Check capaciteit in alle uren en plaats dan in één keer, met max 4 uur per attractie per dag (positie 1 en 2 tellen samen)."""
+    """Check capaciteit in alle uren en plaats dan in één keer.
+    Regels:
+    - max 6 uur totaal per attractie per dag
+    - max 4 aaneengesloten uren op dezelfde attractie
+    """
     # Capaciteit check
     for h in block_hours:
         if not _has_capacity(attr, h):
             return False
-    # Check max 4 unieke uren per attractie per dag (positie 1 en 2 tellen samen)
+
     # Verzamel alle uren waarop deze student al bij deze attractie staat
     uren_bij_attr = set()
     for h in student["assigned_hours"]:
         namen = assigned_map.get((h, attr), [])
         if student["naam"] in namen:
             uren_bij_attr.add(h)
-    # Voeg de nieuwe uren toe
+
+    # Check max 6 unieke uren per attractie per dag
     nieuwe_uren = set(block_hours)
     totaal_uren = uren_bij_attr | nieuwe_uren
-    if len(totaal_uren) > 4:
+    if len(totaal_uren) > 6:
         return False
+
+    # Check max 4 aaneengesloten uren op dezelfde attractie
+    alle_uren_attr = sorted(totaal_uren)
+    if max_consecutive_hours(alle_uren_attr) > 4:
+        return False
+
     # Plaatsen
     for h in block_hours:
         assigned_map[(h, attr)].append(student["naam"])
         per_hour_assigned_counts[h][attr] += 1
         student["assigned_hours"].append(h)
+
     student["assigned_attracties"].add(attr)
     return True
 
-def _try_place_block_any_attr(student, block_hours):
-    """Probeer dit blok te plaatsen op eender welke attractie die student kan."""
-    # Eerst attracties die nu het minst keuze hebben (kritiek), zodat we schaarste slim benutten
-    candidate_attrs = [
-    a for a in attracties_te_plannen
-    if student_kan_attr(student, a)
-]
-    candidate_attrs.sort(key=lambda a: sum(1 for s in studenten_workend if a in s["attracties"]))
-    for attr in candidate_attrs:
-        # vermijd dubbele toewijzing van hetzelfde attr als het niet per se moet
-        if attr in student["assigned_attracties"]:
-            continue
-        if _try_place_block_on_attr(student, block_hours, attr):
-            return True
-    # Als niets lukte zonder herhaling, laat herhaling van attractie toe als dat nodig is
-    for attr in candidate_attrs:
-        if _try_place_block_on_attr(student, block_hours, attr):
-            return True
-    return False
 
-def _place_block_with_fallback(student, hours_seq):
+
+def _try_place_block_any_attr(student, block_hours):
+    """Probeer dit blok te plaatsen op eender welke attractie die student kan.
+    Fairness-regel:
+    - Studenten met veel mogelijke attracties moeten minder snel naar 5e/6e uur
+      op dezelfde attractie gaan.
+    - Studenten met weinig mogelijke attracties blijven soepeler behandeld.
+    """
+
+    def uren_bij_attr(student, attr):
+        uren = set()
+        for h in student["assigned_hours"]:
+            namen = assigned_map.get((h, attr), [])
+            if student["naam"] in namen:
+                uren.add(h)
+        return uren
+
+    def candidate_score(attr):
+        # Hoeveel studenten kunnen deze attractie? Lager = kritieker
+        schaarste = sum(1 for s in studenten_workend if attr in s["attracties"])
+
+        bestaande_uren = uren_bij_attr(student, attr)
+        totaal_na_plaatsing = len(bestaande_uren | set(block_hours))
+        reeds_gebruikt = attr in student["assigned_attracties"]
+
+        # Hoe breed is deze student inzetbaar?
+        # We nemen aantal_attracties als hoofdsignaal, met fallback op echte lijstlengte
+        breedte_profiel = student.get("aantal_attracties", len(student.get("attracties", [])))
+
+        # Fairness-straf:
+        # - Studenten met veel attracties krijgen zware straf als ze naar uur 5/6
+        #   op dezelfde attractie gaan.
+        # - Studenten met weinig attracties krijgen weinig of geen straf.
+        fairness_straf = 0
+
+        if totaal_na_plaatsing > 4:
+            if breedte_profiel >= 6:
+                fairness_straf = 100
+            elif breedte_profiel >= 5:
+                fairness_straf = 60
+            elif breedte_profiel >= 4:
+                fairness_straf = 25
+            else:
+                fairness_straf = 0
+
+        # Lichte voorkeur om eerst nieuwe attracties te gebruiken,
+        # maar minder belangrijk dan fairness boven 4 uur.
+        hergebruik_straf = 1 if reeds_gebruikt else 0
+
+        # Eventueel nog mini-voorkeur voor attracties waar student nog 0 uur stond
+        # en pas daarna voor attracties met al wat uren.
+        huidige_uren_op_attr = len(bestaande_uren)
+
+        return (
+            fairness_straf,
+            hergebruik_straf,
+            huidige_uren_op_attr,
+            schaarste,
+            attr
+        )
+
+    candidate_attrs = [
+        a for a in attracties_te_plannen
+        if student_kan_attr(student, a)
+    ]
+
+    candidate_attrs.sort(key=candidate_score)
+
+    for attr in candidate_attrs:
+        if _try_place_block_on_attr(student, block_hours, attr):
+            return True
+
+    return False
+    
+
+def _place_block_with_fallback(student, hours_seq, preferred_sizes=None):
     """
     Probeer een reeks opeenvolgende uren te plaatsen.
-    - Eerst als blok van 3, anders 2, anders 1.
+    - Standaard: eerst 3, dan 2, dan 1.
+    - Via preferred_sizes kan je lokaal een andere voorkeur afdwingen.
     - Als niets lukt aan het begin van de reeks, schuif 1 uur op (dat uur gaat voorlopig naar extra),
       en probeer verder; tweede pass zal het later alsnog proberen op te vullen.
     Retourneert: lijst 'unplaced' uren die (voorlopig) niet geplaatst raakten.
@@ -615,47 +728,121 @@ def _place_block_with_fallback(student, hours_seq):
     if not hours_seq:
         return []
 
-    # Probeer blok aan de voorkant, groot -> klein
-    for size in [3, 2, 1]:
+    if preferred_sizes is None:
+        preferred_sizes = [3, 2, 1]
+
+    # Probeer blok aan de voorkant volgens voorkeur
+    for size in preferred_sizes:
         if len(hours_seq) >= size:
             first_block = hours_seq[:size]
             if _try_place_block_any_attr(student, first_block):
-                # Rest recursief
-                return _place_block_with_fallback(student, hours_seq[size:])
+                return _place_block_with_fallback(student, hours_seq[size:], preferred_sizes)
 
     # Helemaal niks paste aan de voorkant: markeer eerste uur tijdelijk als 'unplaced' en schuif door
-    return [hours_seq[0]] + _place_block_with_fallback(student, hours_seq[1:])
+    return [hours_seq[0]] + _place_block_with_fallback(student, hours_seq[1:], preferred_sizes)
 
 
+# -----------------------------
+# Vinkjes uitlezen voor bloklogica
+# AR = kolom 44, AS = kolom 45, rij 2
+# -----------------------------
+ar2_vinkje = ws.cell(2, 44).value
+as2_vinkje = ws.cell(2, 45).value
 
+laatste_blok_is_anderhalf_uur = ar2_vinkje in [1, True, "WAAR", "X"]
+eerste_blok_is_anderhalf_uur = as2_vinkje in [1, True, "WAAR", "X"]
+
+    
 # -----------------------------
 # Nieuwe assign_student
 # -----------------------------
+
+
 def assign_student(s):
     """
     Plaats één student in de planning volgens alle regels:
     - Alleen uren waar de student beschikbaar is én open_uren zijn.
     - Geen overlap met pauzevlinder-uren.
     - Alleen attracties die de student kan.
-    - Eerst lange blokken proberen (3 uur), dan korter (2 of 1).
+    - Standaard voorkeur: 3 uur, dan 2, dan 1.
+    - Speciaal geval begin van de dag:
+      * student met exact 4 effectieve werkuren
+      * én AS2 aangevinkt
+      * én run start op het eerste open uur
+      => probeer expliciet 1 + 3
+    - Speciaal geval einde van de dag:
+      * student met exact 4 effectieve werkuren
+      * én AR2 aangevinkt
+      * én run eindigt op het laatste open uur
+      => probeer expliciet 2 + 2
     - Blokken die niet passen, gaan voorlopig naar extra_assignments.
     """
     # Filter op effectieve inzetbare uren
     uren = sorted(u for u in s["uren_beschikbaar"] if u in open_uren)
     if s["is_pauzevlinder"]:
-        # Verwijder uren waarin pauzevlinder moet werken
         uren = [u for u in uren if u not in required_pauze_hours]
 
     if not uren:
-        return  # geen beschikbare uren
+        return
 
-    # Vind aaneengesloten runs van uren
     runs = contiguous_runs(uren)
+    eerste_open_uur = min(open_uren) if open_uren else None
+    laatste_open_uur = max(open_uren) if open_uren else None
 
     for run in runs:
-        # Plaats run met fallback (3->2->1), en schuif als het echt niet kan
-        unplaced = _place_block_with_fallback(s, run)
-        # Wat niet lukte, gaat voorlopig naar extra
+        # -----------------------------
+        # Speciaal geval einde van de dag:
+        # bij AR2 aangevinkt willen we voor een run van exact 4 uren
+        # die eindigt op het laatste open uur liever 2 + 2
+        # -----------------------------
+        if (
+            laatste_blok_is_anderhalf_uur
+            and len(run) == 4
+            and laatste_open_uur is not None
+            and run[-1] == laatste_open_uur
+        ):
+            eerste_blok = run[:2]
+            tweede_blok = run[2:]
+
+            if _try_place_block_any_attr(s, eerste_blok):
+                if _try_place_block_any_attr(s, tweede_blok):
+                    unplaced = []
+                else:
+                    # Eerste 2 uur zijn al geplaatst, rest valt terug op normale logica
+                    unplaced = _place_block_with_fallback(s, tweede_blok)
+            else:
+                # Als 2+2 niet lukt, val volledig terug op normale logica
+                unplaced = _place_block_with_fallback(s, run)
+
+        # -----------------------------
+        # Speciaal geval begin van de dag:
+        # bij AS2 aangevinkt telt het eerste blok als 1,5 uur (9u30-11u),
+        # dus voor een run van exact 4 uren die start op het eerste open uur
+        # proberen we eerst expliciet 1 + 3
+        # -----------------------------
+        elif (
+            eerste_blok_is_anderhalf_uur
+            and len(run) == 4
+            and eerste_open_uur is not None
+            and run[0] == eerste_open_uur
+        ):
+            eerste_blok = [run[0]]
+            rest_blok = run[1:]
+
+            if _try_place_block_any_attr(s, eerste_blok):
+                if _try_place_block_any_attr(s, rest_blok):
+                    unplaced = []
+                else:
+                    # Eerste uur is al geplaatst, rest valt terug op normale logica
+                    unplaced = _place_block_with_fallback(s, rest_blok)
+            else:
+                # Als 1+3 niet lukt, val volledig terug op normale logica
+                unplaced = _place_block_with_fallback(s, run)
+
+        else:
+            # Normale logica
+            unplaced = _place_block_with_fallback(s, run)
+
         for h in unplaced:
             extra_assignments[h].append(s["naam"])
 
@@ -758,6 +945,355 @@ for _ in range(max_iterations):
         break
 
 
+
+# -----------------------------
+# Post-processing: wissel laatste blok van 2 of 3 uren
+# als iemand 5 of 6 uur op 1 attractie staat
+# -----------------------------
+
+vaste_studenten = {vp["naam"] for vp in vaste_plaatsingen}
+
+def get_student_by_name(naam):
+    return next((s for s in studenten_workend if s["naam"] == naam), None)
+
+def get_student_attr_on_hour(student_naam, uur):
+    for attr in actieve_attracties_per_uur.get(uur, set()):
+        if student_naam in assigned_map.get((uur, attr), []):
+            return attr
+    return None
+
+def get_hours_on_attr(student, attr):
+    uren = []
+    for uur in sorted(set(student["assigned_hours"])):
+        if student["naam"] in assigned_map.get((uur, attr), []):
+            uren.append(uur)
+    return sorted(uren)
+
+def get_runs_on_attr(student, attr):
+    uren = get_hours_on_attr(student, attr)
+    return contiguous_runs(uren)
+
+def count_attr_switches(student):
+    uur_attr = []
+    for uur in sorted(set(student["assigned_hours"])):
+        attr = get_student_attr_on_hour(student["naam"], uur)
+        if attr:
+            uur_attr.append((uur, attr))
+
+    if not uur_attr:
+        return 0
+
+    switches = 0
+    prev_attr = uur_attr[0][1]
+    for _, attr in uur_attr[1:]:
+        if attr != prev_attr:
+            switches += 1
+        prev_attr = attr
+    return switches
+
+def remove_assignment(student, uur, attr):
+    namen = assigned_map.get((uur, attr), [])
+    if student["naam"] in namen:
+        namen.remove(student["naam"])
+    if uur in student["assigned_hours"]:
+        student["assigned_hours"].remove(uur)
+
+def add_assignment(student, uur, attr):
+    assigned_map[(uur, attr)].append(student["naam"])
+    student["assigned_hours"].append(uur)
+    student["assigned_attracties"].add(attr)
+
+def rebuild_student_attrs(student):
+    attrs = set()
+    for uur in sorted(set(student["assigned_hours"])):
+        attr = get_student_attr_on_hour(student["naam"], uur)
+        if attr:
+            attrs.add(attr)
+    student["assigned_attracties"] = attrs
+
+def is_valid_attr_for_student_on_hours(student, attr, uren):
+    # vaste dagplaatsingen niet aanpassen
+    if student["naam"] in vaste_studenten:
+        return False
+
+    # student moet attractie kunnen doen
+    if not student_kan_attr(student, attr):
+        return False
+
+    # attractie moet op al die uren actief en geldig zijn
+    for uur in uren:
+        if attr not in actieve_attracties_per_uur.get(uur, set()):
+            return False
+        if attr in red_spots.get(uur, set()):
+            return False
+
+    return True
+
+def respects_student_attr_rules(student, attr):
+    uren = get_hours_on_attr(student, attr)
+    if len(uren) > 6:
+        return False
+    if max_consecutive_hours(uren) > 4:
+        return False
+    return True
+
+def can_swap_exact_block(student_a, attr_a, block_hours, student_b, attr_b):
+    # zelfde student of zelfde attractie heeft geen zin
+    if student_a["naam"] == student_b["naam"]:
+        return False
+    if attr_a == attr_b:
+        return False
+
+    # beide richtingen moeten kunnen
+    if not is_valid_attr_for_student_on_hours(student_a, attr_b, block_hours):
+        return False
+    if not is_valid_attr_for_student_on_hours(student_b, attr_a, block_hours):
+        return False
+
+    # student_b moet op exact deze uren ook éénzelfde blok hebben op attr_b
+    for uur in block_hours:
+        if student_b["naam"] not in assigned_map.get((uur, attr_b), []):
+            return False
+        # en niet tegelijk nog ergens anders zitten
+        current_attr = get_student_attr_on_hour(student_b["naam"], uur)
+        if current_attr != attr_b:
+            return False
+
+    # student_a moet natuurlijk ook exact daar staan
+    for uur in block_hours:
+        if student_a["naam"] not in assigned_map.get((uur, attr_a), []):
+            return False
+        current_attr = get_student_attr_on_hour(student_a["naam"], uur)
+        if current_attr != attr_a:
+            return False
+
+    return True
+
+def count_problem_attrs(student):
+    """
+    Tel voor hoeveel attracties deze student meer dan 4 uur ingepland staat.
+    """
+    count = 0
+    for attr in list(student["assigned_attracties"]):
+        if len(get_hours_on_attr(student, attr)) > 4:
+            count += 1
+    return count
+
+def total_overflow_hours(student):
+    """
+    Tel hoeveel uren boven de limiet van 4 uur deze student in totaal heeft.
+    Voorbeeld:
+    - 5 uur op een attractie => +1
+    - 6 uur op een attractie => +2
+    """
+    overflow = 0
+    for attr in list(student["assigned_attracties"]):
+        uren = len(get_hours_on_attr(student, attr))
+        if uren > 4:
+            overflow += (uren - 4)
+    return overflow
+
+def can_use_block_as_swap_target(student, attr, block_hours):
+    """
+    Check of student op exact deze uren op exact dezelfde attractie staat.
+    """
+    for uur in block_hours:
+        if student["naam"] not in assigned_map.get((uur, attr), []):
+            return False
+        huidige_attr = get_student_attr_on_hour(student["naam"], uur)
+        if huidige_attr != attr:
+            return False
+    return True
+
+def try_swap_specific_block(student, attr, block_hours):
+    """
+    Probeer één specifiek blok (eerste OF laatste) van student/attr te wisselen.
+    Alleen als:
+    - het blok 2 of 3 uur lang is
+    - de andere student op exact die uren ook één blok op één attractie heeft
+    - alle regels geldig blijven
+    - max 1 extra wissel ontstaat
+    - het totaal aantal >4u-problemen niet stijgt
+    - en liefst daalt
+    """
+    if len(block_hours) not in [2, 3]:
+        return False
+
+    orig_switches_a = count_attr_switches(student)
+    orig_problem_count_a = count_problem_attrs(student)
+    orig_overflow_a = total_overflow_hours(student)
+
+    eerste_uur = block_hours[0]
+    kandidaten = []
+
+    for andere_student in studenten_workend:
+        if andere_student["naam"] == student["naam"]:
+            continue
+        if andere_student["naam"] in vaste_studenten:
+            continue
+
+        attr_b = get_student_attr_on_hour(andere_student["naam"], eerste_uur)
+        if not attr_b or attr_b == attr:
+            continue
+
+        # Andere student moet exact op dit hele blok op dezelfde attractie staan
+        if not can_use_block_as_swap_target(andere_student, attr_b, block_hours):
+            continue
+
+        # Beide studenten moeten elkaars attractie op die uren mogen doen
+        if not is_valid_attr_for_student_on_hours(student, attr_b, block_hours):
+            continue
+        if not is_valid_attr_for_student_on_hours(andere_student, attr, block_hours):
+            continue
+
+        kandidaten.append((andere_student["naam"], attr_b, andere_student))
+
+    for _, attr_b, andere_student in kandidaten:
+        orig_switches_b = count_attr_switches(andere_student)
+        orig_problem_count_b = count_problem_attrs(andere_student)
+        orig_overflow_b = total_overflow_hours(andere_student)
+
+        # --- tijdelijke swap uitvoeren ---
+        for uur in block_hours:
+            remove_assignment(student, uur, attr)
+            remove_assignment(andere_student, uur, attr_b)
+
+        for uur in block_hours:
+            add_assignment(student, uur, attr_b)
+            add_assignment(andere_student, uur, attr)
+
+        rebuild_student_attrs(student)
+        rebuild_student_attrs(andere_student)
+
+        valid = True
+
+        # Regels voor beide studenten / beide attracties
+        for s, a in [
+            (student, attr),
+            (student, attr_b),
+            (andere_student, attr),
+            (andere_student, attr_b),
+        ]:
+            if not respects_student_attr_rules(s, a):
+                valid = False
+
+        # Max 1 extra wissel in totaal
+        new_switches_a = count_attr_switches(student)
+        new_switches_b = count_attr_switches(andere_student)
+        extra_wissels = (new_switches_a - orig_switches_a) + (new_switches_b - orig_switches_b)
+
+        if extra_wissels > 1:
+            valid = False
+
+        # Problemen na swap
+        new_problem_count_a = count_problem_attrs(student)
+        new_problem_count_b = count_problem_attrs(andere_student)
+        new_overflow_a = total_overflow_hours(student)
+        new_overflow_b = total_overflow_hours(andere_student)
+
+        orig_total_problem_count = orig_problem_count_a + orig_problem_count_b
+        new_total_problem_count = new_problem_count_a + new_problem_count_b
+
+        orig_total_overflow = orig_overflow_a + orig_overflow_b
+        new_total_overflow = new_overflow_a + new_overflow_b
+
+        # Geen nieuw probleem creëren
+        if new_total_problem_count > orig_total_problem_count:
+            valid = False
+
+        # Geen grotere overschrijding creëren
+        if new_total_problem_count == orig_total_problem_count and new_total_overflow > orig_total_overflow:
+            valid = False
+
+        # Moet minstens iets verbeteren
+        verbetering = (
+            (new_total_problem_count < orig_total_problem_count)
+            or (
+                new_total_problem_count == orig_total_problem_count
+                and new_total_overflow < orig_total_overflow
+            )
+        )
+
+        if not verbetering:
+            valid = False
+
+        if valid:
+            return True
+
+        # --- rollback ---
+        for uur in block_hours:
+            remove_assignment(student, uur, attr_b)
+            remove_assignment(andere_student, uur, attr)
+
+        for uur in block_hours:
+            add_assignment(student, uur, attr)
+            add_assignment(andere_student, uur, attr_b)
+
+        rebuild_student_attrs(student)
+        rebuild_student_attrs(andere_student)
+
+    return False
+
+def try_swap_last_or_first_block(student, attr):
+    """
+    Probeer eerst het laatste blok op deze attractie te wisselen.
+    Lukt dat niet, probeer dan het eerste blok.
+    Alleen relevant als student >4 uur op deze attractie staat.
+    """
+    uren_op_attr = get_hours_on_attr(student, attr)
+    if len(uren_op_attr) <= 4:
+        return False
+
+    runs = get_runs_on_attr(student, attr)
+    if not runs:
+        return False
+
+    laatste_run = runs[-1]
+    eerste_run = runs[0]
+
+    # Eerst laatste blok proberen
+    if len(laatste_run) in [2, 3]:
+        if try_swap_specific_block(student, attr, laatste_run):
+            return True
+
+    # Daarna eerste blok proberen
+    if len(eerste_run) in [2, 3]:
+        # niet dubbel proberen als er maar 1 run is en die identiek is
+        if eerste_run != laatste_run:
+            if try_swap_specific_block(student, attr, eerste_run):
+                return True
+
+    return False
+
+
+# Iteratief toepassen tot er niets meer verandert
+max_block_swap_passes = 5
+for _ in range(max_block_swap_passes):
+    wijziging = False
+
+    for student in studenten_workend:
+        probleem_attracties = [
+            a for a in list(student["assigned_attracties"])
+            if len(get_hours_on_attr(student, a)) > 4
+        ]
+
+        # Eerst de zwaarste problemen proberen
+        probleem_attracties.sort(
+            key=lambda a: (
+                -len(get_hours_on_attr(student, a)),
+                -max(get_hours_on_attr(student, a))
+            )
+        )
+
+        for attr in probleem_attracties:
+            if try_swap_last_or_first_block(student, attr):
+                wijziging = True
+                break
+
+    if not wijziging:
+        break
+
+
 # -----------------------------
 # Volgorde attracties uit Input!BL16:BL33
 # -----------------------------
@@ -804,6 +1340,144 @@ for sameng in samengestelde_attracties:
 
 # Voeg tenslotte nog attracties toe die niet in BL16:BL33 stonden
 alle_actieve_attracties = geordende_attracties + overige_attracties
+
+
+# -----------------------------
+# Output-fix: houd studenten zo veel mogelijk
+# op dezelfde plek (1 of 2) per attractie over opeenvolgende uren
+# -----------------------------
+def stabiliseer_assigned_map_voor_output():
+    """
+    Deze functie verandert niets aan WIE waar staat,
+    maar alleen in welke volgorde namen in assigned_map[(uur, attr)] staan.
+
+    Doel:
+    - Studenten zo veel mogelijk op dezelfde plek (1 of 2) houden over opeenvolgende uren.
+    - Extra slim omgaan met uren waarop plek 2 later verdwijnt:
+      als iemand doorloopt naar een volgend uur met slechts 1 plek,
+      dan zetten we die student liefst al op plek 1 in het uur ervoor.
+    """
+
+    def get_namen_op_uur(attr, uur):
+        namen = list(assigned_map.get((uur, attr), []))
+        unieke_namen = []
+        for naam in namen:
+            if naam and naam not in unieke_namen:
+                unieke_namen.append(naam)
+        return unieke_namen
+
+    def get_max_pos(attr, uur):
+        max_pos = aantallen[uur].get(attr, 1)
+        if attr in second_spot_blocked.get(uur, set()):
+            max_pos = 1
+        return max_pos
+
+    def naam_staat_op_attr_in_volgend_uur(attr, huidig_uur, naam):
+        volgende_uren = [u for u in sorted(open_uren) if u > huidig_uur]
+        if not volgende_uren:
+            return False
+        volgend_uur = volgende_uren[0]
+        return naam in get_namen_op_uur(attr, volgend_uur)
+
+    def naam_moet_liefst_naar_plek1(attr, huidig_uur, naam):
+        """
+        True als deze naam in het volgende uur nog op dezelfde attractie staat
+        én het volgende uur maar 1 plek heeft.
+        Dan is het logisch om deze student nu al op plek 1 te zetten.
+        """
+        volgende_uren = [u for u in sorted(open_uren) if u > huidig_uur]
+        if not volgende_uren:
+            return False
+
+        volgend_uur = volgende_uren[0]
+        if get_max_pos(attr, volgend_uur) != 1:
+            return False
+
+        return naam in get_namen_op_uur(attr, volgend_uur)
+
+    for attr in alle_actieve_attracties:
+        vorige_slots = {1: None, 2: None}
+
+        for uur in sorted(open_uren):
+            namen = get_namen_op_uur(attr, uur)
+            max_pos = get_max_pos(attr, uur)
+
+            if not namen:
+                assigned_map[(uur, attr)] = []
+                vorige_slots = {1: None, 2: None}
+                continue
+
+            if max_pos <= 1:
+                assigned_map[(uur, attr)] = [namen[0]]
+                vorige_slots = {1: namen[0], 2: None}
+                continue
+
+            # Vanaf hier: 2 plekken beschikbaar
+            slots = {1: None, 2: None}
+            resterend = namen[:]
+
+            # 1) Eerst vooruitkijken:
+            # als een student in het volgende uur doorloopt terwijl daar nog maar 1 plek is,
+            # dan krijgt die student nu voorrang op plek 1.
+            voorkeursnaam_plek1 = None
+            kandidaten_plek1 = [n for n in resterend if naam_moet_liefst_naar_plek1(attr, uur, n)]
+            if len(kandidaten_plek1) == 1:
+                voorkeursnaam_plek1 = kandidaten_plek1[0]
+            elif len(kandidaten_plek1) > 1:
+                # Als er meerdere kandidaten zijn:
+                # geef voorkeur aan wie vorige uur al op plek 1 stond,
+                # anders gewoon de eerste in de huidige lijst.
+                if vorige_slots.get(1) in kandidaten_plek1:
+                    voorkeursnaam_plek1 = vorige_slots.get(1)
+                else:
+                    voorkeursnaam_plek1 = kandidaten_plek1[0]
+
+            if voorkeursnaam_plek1 in resterend:
+                slots[1] = voorkeursnaam_plek1
+                resterend.remove(voorkeursnaam_plek1)
+
+            # 2) Daarna achterwaartse stabiliteit:
+            # probeer dezelfde student op dezelfde plek te houden
+            for pos in [1, 2]:
+                if slots[pos] is not None:
+                    continue
+                vorige_naam = vorige_slots.get(pos)
+                if vorige_naam in resterend:
+                    slots[pos] = vorige_naam
+                    resterend.remove(vorige_naam)
+
+            # 3) Als plek 1 nog leeg is, geef lichte voorkeur aan iemand
+            # die ook in het volgende uur op deze attractie blijft staan
+            if slots[1] is None:
+                doorlopers = [n for n in resterend if naam_staat_op_attr_in_volgend_uur(attr, uur, n)]
+                if len(doorlopers) == 1:
+                    slots[1] = doorlopers[0]
+                    resterend.remove(doorlopers[0])
+                elif len(doorlopers) > 1:
+                    # behoud indien mogelijk de oude plek-1 volgorde
+                    if vorige_slots.get(1) in doorlopers:
+                        slots[1] = vorige_slots.get(1)
+                        resterend.remove(vorige_slots.get(1))
+                    else:
+                        slots[1] = doorlopers[0]
+                        resterend.remove(doorlopers[0])
+
+            # 4) Vul de rest gewoon op
+            for pos in [1, 2]:
+                if slots[pos] is None and resterend:
+                    slots[pos] = resterend.pop(0)
+
+            nieuwe_volgorde = []
+            if slots[1]:
+                nieuwe_volgorde.append(slots[1])
+            if slots[2]:
+                nieuwe_volgorde.append(slots[2])
+
+            assigned_map[(uur, attr)] = nieuwe_volgorde
+            vorige_slots = {1: slots[1], 2: slots[2]}
+
+stabiliseer_assigned_map_voor_output()
+
 
 # -----------------------------
 
@@ -4379,7 +5053,6 @@ for row in ws_feedback2.iter_rows():
         )
 
 
-
 # PART 6 6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666
 # PART 6 666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666
 
@@ -4843,7 +5516,6 @@ breedtes = {
 for col_idx, breedte in breedtes.items():
     ws_wissels.column_dimensions[get_column_letter(col_idx)].width = breedte
 
-
 #NIEUWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
 #NIEUWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
 
@@ -4864,4 +5536,3 @@ st.download_button(
     data=output.getvalue(),
     file_name=f"Planning_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 )
-                                           
