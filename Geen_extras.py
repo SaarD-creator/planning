@@ -236,8 +236,6 @@ for idx,pvnaam in enumerate(pauzevlinder_namen,start=1):
 # Maak 'selected' lijst van pauzevlinders (dicts met naam en attracties)
 selected = [s for s in studenten if s.get("is_pauzevlinder")]
 
-# Zet de pauzevlinders in willekeurige volgorde
-random.shuffle(selected)
 
 # -----------------------------
 # Attracties & aantallen (raw)
