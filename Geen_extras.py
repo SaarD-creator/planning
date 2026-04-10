@@ -210,6 +210,7 @@ open_uren=sorted(set(open_uren))
 # -----------------------------
 pauzevlinder_namen=[ws[f'BN{rij}'].value for rij in range(4,11) if ws[f'BN{rij}'].value]
 
+
 def compute_pauze_hours(open_uren):
     if 10 in open_uren and 18 in open_uren:
         return [h for h in open_uren if 12 <= h <= 16]
@@ -234,6 +235,9 @@ for idx,pvnaam in enumerate(pauzevlinder_namen,start=1):
 
 # Maak 'selected' lijst van pauzevlinders (dicts met naam en attracties)
 selected = [s for s in studenten if s.get("is_pauzevlinder")]
+
+# Zet de pauzevlinders in willekeurige volgorde
+random.shuffle(selected)
 
 # -----------------------------
 # Attracties & aantallen (raw)
