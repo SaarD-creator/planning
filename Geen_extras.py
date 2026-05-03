@@ -45,7 +45,7 @@ file_bytes = uploaded_file.read()
 
 # Workbook met berekende waarden voor de gewone planning
 wb = load_workbook(BytesIO(file_bytes), data_only=True)
-ws = wb["Input"]
+
 
 
 ws_speciaal = wb["Input_"]
