@@ -1,3 +1,4 @@
+# kleine fix bij last minute qua layout + ontdekt dat afkapping uren niet altijd top werkt (PV staat niet bij extra of op planning)
 # nieuwe logica voor studenten die langer werken dan effectieve uren op planning
 # Last minute planning is vaak niet top
 # overschakeling compleettt
@@ -9665,7 +9666,7 @@ def lm5_extend_extra_rows_if_needed(base_maps, ctx):
     insert_after = max(alle_rijen) if alle_rijen else 1
 
     # +2: 1 lege rij spatie, dan de eerste nieuwe extra-rij
-    current_row = insert_after + 2
+    current_row = insert_after + 1
 
     for i in range(extra_tekort):
         nieuw_idx = len(extra_rows) + i + 1
@@ -9952,10 +9953,6 @@ def lm5_build_lastminute_context(base_bytes, absentees, start_uur):
         )
 
         ctx["hour_states"][uur] = hour_state
-
-    # NIEUW: zorg dat nieuw samengestelde attracties ook echte rijen krijgen
-    lm5_extend_attr_rows_with_dynamic_merges(base_maps, ctx, start_uur)
-
   
 
     # STAP 2: eerst zoveel mogelijk exact dezelfde plek houden
@@ -10021,6 +10018,7 @@ def lm5_build_lastminute_context(base_bytes, absentees, start_uur):
     lm5_postprocess_long_blocks(ctx, start_uur)
 
     lm5_extend_extra_rows_if_needed(base_maps, ctx)
+    lm5_extend_attr_rows_with_dynamic_merges(base_maps, ctx, start_uur)
 
     return ctx, base_maps
 
@@ -10074,6 +10072,7 @@ def lm5_write_lastminute_workbook(base_bytes, ctx, base_maps, start_uur, absente
             base_maps["attr_rows"]  = attr_rows
 
     center_align = Alignment(horizontal="center", vertical="center")
+    left_align = Alignment(horizontal="left", vertical="center")
     thin_border  = Border(
         left=Side(style="thin"),
         right=Side(style="thin"),
@@ -10108,7 +10107,7 @@ def lm5_write_lastminute_workbook(base_bytes, ctx, base_maps, start_uur, absente
             ws_plan.cell(row, 1).value     = rijlabel
             ws_plan.cell(row, 1).font      = Font(bold=True)
             ws_plan.cell(row, 1).fill      = white_fill
-            ws_plan.cell(row, 1).alignment = center_align
+            ws_plan.cell(row, 1).alignment = left_align
             ws_plan.cell(row, 1).border    = thin_border
 
             for uur in sorted(open_uren):
