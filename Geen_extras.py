@@ -2163,7 +2163,7 @@ def student_kan_attr_in_analyse(student, attr):
 
 def actieve_analyse_attracties_op_uur(uur, actieve_set=None):
     """
-    Geeft attracties terug in de volgorde van Input!BL16:BL33,
+    Geeft attracties terug in de volgorde van Aanpassingen!C3:C20,
     maar aangepast aan het specifieke uur:
     - losse attracties als ze actief zijn
     - samengevoegde attracties enkel als ze dat uur actief samengevoegd zijn
@@ -2173,8 +2173,8 @@ def actieve_analyse_attracties_op_uur(uur, actieve_set=None):
         actieve_set = actieve_attracties_per_uur.get(uur, set())
 
     input_volgorde_lokaal = []
-    for rij_bl in range(16, 34):  # BL16 t.e.m. BL33
-        attr = ws[f"BL{rij_bl}"].value
+    for rij in range(3, 21):  # C3:C20 in Aanpassingen
+        attr = ws_aanpassingen.cell(rij, 3).value
         if attr:
             input_volgorde_lokaal.append(str(attr).strip())
 
