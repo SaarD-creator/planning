@@ -5664,24 +5664,38 @@ def maak_pp2_sheets(wb_arg, am_arg):
     
     
     def pp2_benodigde_korte_kwartieren(naam):
-        """
-        Nieuwe regel voor PP optie 2:
-        - < 4 uur gewerkt => 0 korte kwartieren
-        - >= 4 uur gewerkt => 1 kort kwartier
-    
-        Dit geldt nu ook voor minderjarigen:
-        - minderjarige 4u t.e.m. 6u => 1 kort kwartier
-        - minderjarige > 6u => ook 1 kort kwartier
-        """
-        # Groep 1 speciale lange werkers krijgen geen korte pauze
+        # Bestaande uitzondering: speciale groep 1
         if naam in pp2_speciale_groep1_namen:
             return 0
-
-        gewerkte_uren = werkduur_voor_pauze(naam)
-
-        if gewerkte_uren < 4:
+    
+        theo_duur = student_totalen.get(naam, 0)
+        student = next((s for s in studenten if s["naam"] == naam), None)
+    
+        if student:
+            begin_uur = student.get("begin_uur")
+            eind_uur  = student.get("eind_uur")
+    
+            if begin_uur is not None and eind_uur is not None:
+                echte_duur = eind_uur - begin_uur
+    
+                # Uitzondering 2: theoretische shift <= 2u
+                if theo_duur <= 2:
+                    return 0
+    
+                # Uitzondering 1: echte einduur - theo einduur >= 1.5u
+                theo_uren = pp2_get_student_work_hours(naam)
+                if theo_uren:
+                    theo_eind = max(theo_uren) + blok_durations.get(max(theo_uren), 1.0)
+                    if (eind_uur - theo_eind) >= 1.5:
+                        return 0
+    
+                # Iedereen die echt >= 4u werkt krijgt een korte pauze
+                if echte_duur >= 4:
+                    return 1
+    
+        # Fallback naar bestaande logica
+        if werkduur_voor_pauze(naam) < 4:
             return 0
-
         return 1
     
     
