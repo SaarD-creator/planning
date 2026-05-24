@@ -4763,7 +4763,7 @@ def maak_pp2_sheets(wb_arg, am_arg):
         aantal_uren = len(werk_uren)
     
         einduur_dag = max(open_uren) if open_uren else None
-        if einduur_dag is None or einduur_dag > 17:
+        if einduur_dag is None or einduur_dag > 16:
             if laatste_werkblok > 15:
                 continue
         if werkduur_voor_pauze(naam) > 6:  # lange werkers horen in stap 2
@@ -4789,7 +4789,7 @@ def maak_pp2_sheets(wb_arg, am_arg):
     # Op korte dagen (einduur <= 17u) zijn er geen gewone vroege stoppers:
     # iedereen valt door naar stap 3 voor een beter gespreide verdeling.
     # Minderjarigen (stap 1a) blijven wel hun halfuur krijgen via de eigen logica.
-    if open_uren and max(open_uren) <= 17:
+    if open_uren and max(open_uren) <= 16:
         vroege_stoppers_gewoon = []
     
     pp2_geplaatste_pauzes = []
