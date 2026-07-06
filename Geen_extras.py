@@ -1,3 +1,5 @@
+# mooiere blokken met tweede plekken
+# nieuwe verdeling van de blokken! drempel voorlopig op 60% voor ingesloten shiften + 18% voor vermijden éénuursblokken
 # kleine fix bij last minute qua layout + ontdekt dat afkapping uren niet altijd top werkt (PV staat niet bij extra of op planning)
 # nieuwe logica voor studenten die langer werken dan effectieve uren op planning
 # Last minute planning is vaak niet top
@@ -154,69 +156,133 @@ def max_consecutive_hours(urenlijst):
 
 
 
-def compute_ideal_moments(open_uren):
+def compute_ideal_moments():
     """
-    Ideaalmomenten vallen na elke 3 blokken (op basis van positie, niet uren).
-    Als het totaal aantal blokken deelbaar is door 3, zijn er geen ideaalmomenten nodig.
-
-    Voorbeeld: 9 blokken → deelbaar door 3 → lege set
-    Voorbeeld: 8 blokken → ideaalmomenten op blok 4 en blok 7 (index 3 en 6)
+    Nieuwe ideaalmomenten o.b.v. de echte shiften van de studenten.
+    - shift = aaneensluitend werkinterval (PV-uren eruit geknipt)
+    - stap 1: split de drukste shift in blokken van <= 3 uur
+    - stap 2/3: kies per span de opsplitsing met de meeste begin/eind-dekking
+    - recursie: elk overgebleven stuk > 3u wordt opnieuw opgesplitst
     """
-    if not open_uren:
-        return set()
-    blokken = sorted(open_uren)
-    if len(blokken) < 4:
-        return set()
-    return {blokken[i] for i in range(3, len(blokken), 3)}
+    # shiften verzamelen (zelfde uren-filter als assign_student)
+    shifts = defaultdict(int)
+    for s in studenten_workend:
+        uren = sorted(u for u in s["uren_beschikbaar"] if u in open_uren)
+        if s["is_pauzevlinder"]:
+            uren = [u for u in uren if u not in required_pauze_hours]
+        for run in contiguous_runs(uren):
+            shifts[(run[0], run[-1] + 1)] += 1   # (start, eind-marker)
 
+    if not shifts:
+        return set()
+
+    open_start = min(open_uren)
+    open_end = max(open_uren) + 1
+
+    # begin/eind-histogram (geteld in #studenten)
+    hist = defaultdict(int)
+    for (start, eind), aantal in shifts.items():
+        hist[start] += aantal
+        hist[eind] += aantal
+        
+    top_count = max(shifts.values())
+    DEKKING_DREMPEL = 0.18   # een begin/eind-moment telt pas mee als >= 18% van de drukste shift het deelt
+
+    # alle geordende opsplitsingen van n in exact k delen, elk 1..3
+    def _composities(n, k):
+        if k == 1:
+            if 1 <= n <= 3:
+                yield (n,)
+            return
+        for eerste in range(1, 4):
+            rest = n - eerste
+            if rest < k - 1:
+                break
+            if rest > (k - 1) * 3:
+                continue
+            for staart in _composities(rest, k - 1):
+                yield (eerste,) + staart
+
+    def _kies_cuts(a, b):
+        n = b - a
+        k = -(-n // 3)                            # ceil(n/3)
+        beste, beste_sleutel = None, None
+        for comp in _composities(n, k):
+            cuts, u = set(), a
+            for L in comp:
+                cuts.add(u); u += L
+            cuts.add(b)
+            sleutel = (
+                sum(hist.get(h, 0) for h in cuts if hist.get(h, 0) >= DEKKING_DREMPEL * top_count),     # stap 3: begin/eind-dekking
+                -sum(1 for L in comp if L == 1),        # minste 1-uursblokken
+                comp,                                   # zoveel mogelijk 3-blokken vooraan
+            )
+            if beste_sleutel is None or sleutel > beste_sleutel:
+                beste, beste_sleutel = cuts, sleutel
+        return beste
+
+    # Stap 1
+    # -- volledig grid bouwen vanuit één sturende shift --
+    def _bouw_grid(sturende):
+        grid = {open_start, open_end}
+        grid |= _kies_cuts(sturende[0], sturende[1])
+        veranderd = True
+        while veranderd:
+            veranderd = False
+            for g1, g2 in zip(sorted(grid), sorted(grid)[1:]):
+                if g2 - g1 > 3:
+                    grid |= _kies_cuts(g1, g2)
+                    veranderd = True
+                    break
+        return grid
+
+    # -- kwaliteit van een grid over de hele populatie --
+    def _kwaliteit(grid):
+        enen = wissels = 0
+        for (a, b), aantal in shifts.items():
+            run = [h for h in open_uren if a <= h < b]
+            bl, huidig = [], 1
+            for i in range(1, len(run)):
+                if run[i] in grid:
+                    bl.append(huidig); huidig = 1
+                else:
+                    huidig += 1
+            bl.append(huidig)
+            enen += aantal * sum(1 for x in bl if x == 1)
+            wissels += aantal * (len(bl) - 1)
+        return (enen, wissels)
+
+    # stap 1: kandidaten = drukste shift + elke shift met >= 65% van die telling.
+    # Onder die kandidaten kiezen we diegene wiens rooster de minste 1-uursblokken
+    # (dan minste wissels) geeft; bij gelijke kwaliteit de drukste, dan langste, dan vroegste.
+    DREMPEL = 0.60
+    top_count = max(shifts.values())
+    kandidaten = [se for se in shifts if shifts[se] >= DREMPEL * top_count]
+
+    def _selectie_sleutel(se):
+        enen, wissels = _kwaliteit(_bouw_grid(se))
+        return (enen, wissels, -shifts[se], -(se[1] - se[0]), se[0])
+
+    s1 = min(kandidaten, key=_selectie_sleutel)
+    return _bouw_grid(s1)
 
 def partition_run_lengths(run_hours, ideal_moments=None):
     """
-    Splits een run van blokken op in stukken van [3, 2, 4, 1].
-    Gebruikt blokposities (via run_hours lijst), niet uuraritmethiek.
+    Knipt de run van een student op de ideaalmomenten.
+    Een nieuw blok begint telkens als een uur een ideaalmoment is (behalve het eerste uur).
     """
-    L = len(run_hours)
-    blocks = [3, 2, 4, 1]
-    use_ideal = bool(ideal_moments) and L % 3 != 0
-
-    if use_ideal:
-        INF = 10 ** 9
-        dp = [(INF, INF, [])] * (L + 1)
-        dp[0] = (0, 0, [])
-        for i in range(1, L + 1):
-            best = (INF, INF, [])
-            for b in blocks:
-                if i - b < 0:
-                    continue
-                prev_neg, prev_ones, prev_blks = dp[i - b]
-                if prev_neg == INF:
-                    continue
-                # Startuur van dit blok rechtstreeks uit run_hours
-                blok_start_uur = run_hours[i - b]
-                is_ideal = (i - b > 0) and (blok_start_uur in ideal_moments)
-                cand = (
-                    prev_neg - (1 if is_ideal else 0),
-                    prev_ones + (1 if b == 1 else 0),
-                    prev_blks + [b],
-                )
-                if (cand[0], cand[1]) < (best[0], best[1]):
-                    best = cand
-            dp[i] = best
-        return dp[L][2]
-    else:
-        dp = [(10 ** 9, [])] * (L + 1)
-        dp[0] = (0, [])
-        for i in range(1, L + 1):
-            best = (10 ** 9, [])
-            for b in blocks:
-                if i - b < 0:
-                    continue
-                prev_ones, prev_blks = dp[i - b]
-                cand = (prev_ones + (1 if b == 1 else 0), prev_blks + [b])
-                if cand < best:
-                    best = cand
-            dp[i] = best
-        return dp[L][1]
+    if not run_hours:
+        return []
+    ideal = ideal_moments or set()
+    blokken, huidig = [], 1
+    for i in range(1, len(run_hours)):
+        if run_hours[i] in ideal:
+            blokken.append(huidig)
+            huidig = 1
+        else:
+            huidig += 1
+    blokken.append(huidig)
+    return blokken
 
 
 def contiguous_runs(sorted_hours):
@@ -399,7 +465,6 @@ if not open_uren:
 open_uren = sorted(set(open_uren))
         
 
-ideaalmomenten = compute_ideal_moments(open_uren)
 
 # -----------------------------
 # Sorteervolgorde studenten
@@ -618,6 +683,9 @@ for uur in open_uren:
 studenten_workend = [
     s for s in studenten if any(u in open_uren for u in s["uren_beschikbaar"])
 ]
+
+
+ideaalmomenten = compute_ideal_moments()  
 
 
 # -----------------------------
@@ -1207,23 +1275,18 @@ def assign_student(s):
     runs = contiguous_runs(uren)
 
     for run in runs:
-        L = len(run)
-        if L % 3 != 0 and ideaalmomenten:
-            blokken = partition_run_lengths(run, ideal_moments=ideaalmomenten)
-            seen = []
-            for b in blokken:
-                if b not in seen:
-                    seen.append(b)
-            for b in [3, 2, 4, 1]:
-                if b not in seen:
-                    seen.append(b)
-            preferred_sizes = seen
-        else:
-            preferred_sizes = [3, 2, 4, 1]
-        unplaced = _place_block_with_fallback(s, run, preferred_sizes=preferred_sizes, reset_sizes=[3, 2, 4, 1])
+        blokken = partition_run_lengths(run, ideal_moments=ideaalmomenten)
 
-        for h in unplaced:
-            extra_assignments[h].append(s["naam"])
+        idx = 0
+        for b in blokken:
+            block_hours = run[idx: idx + b]
+            idx += b
+            degr = list(range(b, 0, -1))          # b=3 -> [3, 2, 1]
+            unplaced = _place_block_with_fallback(
+                s, block_hours, preferred_sizes=degr, reset_sizes=degr
+            )
+            for h in unplaced:
+                extra_assignments[h].append(s["naam"])
 
 
 for s in studenten_sorted:
@@ -1746,139 +1809,47 @@ for sameng in samengestelde_attracties:
 alle_actieve_attracties = geordende_attracties + overige_attracties
 
 
-# -----------------------------
-# Output-fix: houd studenten zo veel mogelijk
-# op dezelfde plek (1 of 2) per attractie over opeenvolgende uren
-# -----------------------------
 def stabiliseer_assigned_map_voor_output():
-    """
-    Deze functie verandert niets aan WIE waar staat,
-    maar alleen in welke volgorde namen in assigned_map[(uur, attr)] staan.
+    gesorteerde_uren = sorted(open_uren)
 
-    Doel:
-    - Studenten zo veel mogelijk op dezelfde plek (1 of 2) houden over opeenvolgende uren.
-    - Extra slim omgaan met uren waarop plek 2 later verdwijnt:
-      als iemand doorloopt naar een volgend uur met slechts 1 plek,
-      dan zetten we die student liefst al op plek 1 in het uur ervoor.
-    """
-
-    def get_namen_op_uur(attr, uur):
-        namen = list(assigned_map.get((uur, attr), []))
-        unieke_namen = []
-        for naam in namen:
-            if naam and naam not in unieke_namen:
-                unieke_namen.append(naam)
-        return unieke_namen
-
-    def get_max_pos(attr, uur):
-        max_pos = aantallen[uur].get(attr, 1)
-        if attr in second_spot_blocked.get(uur, set()):
-            max_pos = 1
-        return max_pos
-
-    def naam_staat_op_attr_in_volgend_uur(attr, huidig_uur, naam):
-        volgende_uren = [u for u in sorted(open_uren) if u > huidig_uur]
-        if not volgende_uren:
-            return False
-        volgend_uur = volgende_uren[0]
-        return naam in get_namen_op_uur(attr, volgend_uur)
-
-    def naam_moet_liefst_naar_plek1(attr, huidig_uur, naam):
-        """
-        True als deze naam in het volgende uur nog op dezelfde attractie staat
-        én het volgende uur maar 1 plek heeft.
-        Dan is het logisch om deze student nu al op plek 1 te zetten.
-        """
-        volgende_uren = [u for u in sorted(open_uren) if u > huidig_uur]
-        if not volgende_uren:
-            return False
-
-        volgend_uur = volgende_uren[0]
-        if get_max_pos(attr, volgend_uur) != 1:
-            return False
-
-        return naam in get_namen_op_uur(attr, volgend_uur)
+    def blijft_aantal_uren(naam, attr, vanaf_uur):
+        # aantal aaneensluitende uren vanaf vanaf_uur dat naam op deze attractie staat
+        teller = 0
+        for u in gesorteerde_uren:
+            if u < vanaf_uur:
+                continue
+            if naam in assigned_map.get((u, attr), []):
+                teller += 1
+            else:
+                break
+        return teller
 
     for attr in alle_actieve_attracties:
-        vorige_slots = {1: None, 2: None}
+        vorige = []  # namen van vorig uur op plek-volgorde: vorige[0]=plek1, [1]=plek2
+        for uur in gesorteerde_uren:
+            max_pos = aantallen[uur].get(attr, 1)
+            if attr in second_spot_blocked.get(uur, set()):
+                max_pos = 1
+            namen = list(dict.fromkeys(n for n in assigned_map.get((uur, attr), []) if n))
 
-        for uur in sorted(open_uren):
-            namen = get_namen_op_uur(attr, uur)
-            max_pos = get_max_pos(attr, uur)
+            slots = [None] * max_pos
+            # 1) wie vorig uur een plek had, houdt die plek (indien nog geldig & vrij)
+            for naam in namen:
+                if naam in vorige:
+                    plek = vorige.index(naam)
+                    if plek < max_pos and slots[plek] is None:
+                        slots[plek] = naam
+            # 2) nieuwe namen: wie het langst blijft eerst -> krijgt de laagste vrije plek
+            nieuwe = [n for n in namen if n not in slots]
+            nieuwe.sort(key=lambda n: -blijft_aantal_uren(n, attr, uur))
+            for naam in nieuwe:
+                for i in range(max_pos):
+                    if slots[i] is None:
+                        slots[i] = naam
+                        break
 
-            if not namen:
-                assigned_map[(uur, attr)] = []
-                vorige_slots = {1: None, 2: None}
-                continue
-
-            if max_pos <= 1:
-                assigned_map[(uur, attr)] = [namen[0]]
-                vorige_slots = {1: namen[0], 2: None}
-                continue
-
-            # Vanaf hier: 2 plekken beschikbaar
-            slots = {1: None, 2: None}
-            resterend = namen[:]
-
-            # 1) Eerst vooruitkijken:
-            # als een student in het volgende uur doorloopt terwijl daar nog maar 1 plek is,
-            # dan krijgt die student nu voorrang op plek 1.
-            voorkeursnaam_plek1 = None
-            kandidaten_plek1 = [n for n in resterend if naam_moet_liefst_naar_plek1(attr, uur, n)]
-            if len(kandidaten_plek1) == 1:
-                voorkeursnaam_plek1 = kandidaten_plek1[0]
-            elif len(kandidaten_plek1) > 1:
-                # Als er meerdere kandidaten zijn:
-                # geef voorkeur aan wie vorige uur al op plek 1 stond,
-                # anders gewoon de eerste in de huidige lijst.
-                if vorige_slots.get(1) in kandidaten_plek1:
-                    voorkeursnaam_plek1 = vorige_slots.get(1)
-                else:
-                    voorkeursnaam_plek1 = kandidaten_plek1[0]
-
-            if voorkeursnaam_plek1 in resterend:
-                slots[1] = voorkeursnaam_plek1
-                resterend.remove(voorkeursnaam_plek1)
-
-            # 2) Daarna achterwaartse stabiliteit:
-            # probeer dezelfde student op dezelfde plek te houden
-            for pos in [1, 2]:
-                if slots[pos] is not None:
-                    continue
-                vorige_naam = vorige_slots.get(pos)
-                if vorige_naam in resterend:
-                    slots[pos] = vorige_naam
-                    resterend.remove(vorige_naam)
-
-            # 3) Als plek 1 nog leeg is, geef lichte voorkeur aan iemand
-            # die ook in het volgende uur op deze attractie blijft staan
-            if slots[1] is None:
-                doorlopers = [n for n in resterend if naam_staat_op_attr_in_volgend_uur(attr, uur, n)]
-                if len(doorlopers) == 1:
-                    slots[1] = doorlopers[0]
-                    resterend.remove(doorlopers[0])
-                elif len(doorlopers) > 1:
-                    # behoud indien mogelijk de oude plek-1 volgorde
-                    if vorige_slots.get(1) in doorlopers:
-                        slots[1] = vorige_slots.get(1)
-                        resterend.remove(vorige_slots.get(1))
-                    else:
-                        slots[1] = doorlopers[0]
-                        resterend.remove(doorlopers[0])
-
-            # 4) Vul de rest gewoon op
-            for pos in [1, 2]:
-                if slots[pos] is None and resterend:
-                    slots[pos] = resterend.pop(0)
-
-            nieuwe_volgorde = []
-            if slots[1]:
-                nieuwe_volgorde.append(slots[1])
-            if slots[2]:
-                nieuwe_volgorde.append(slots[2])
-
-            assigned_map[(uur, attr)] = nieuwe_volgorde
-            vorige_slots = {1: slots[1], 2: slots[2]}
+            assigned_map[(uur, attr)] = [n for n in slots if n]
+            vorige = slots
 
 stabiliseer_assigned_map_voor_output()
 
